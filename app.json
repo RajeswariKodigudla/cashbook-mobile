@@ -5,6 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
     "splash": {
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
@@ -14,25 +15,22 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.cashbook.app"
+      "bundleIdentifier": "com.rajeswarikodigudla.cashbook"
     },
     "android": {
-      "package": "com.cashbook.app",
+      "package": "com.rajeswarikodigudla.cashbook",
       "versionCode": 1,
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
       "permissions": [
         "INTERNET",
         "ACCESS_NETWORK_STATE"
       ],
-      "playStoreUrl": "https://play.google.com/store/apps/details?id=com.cashbook.app"
+      "playStoreUrl": "https://play.google.com/store/apps/details?id=com.rajeswarikodigudla.cashbook"
     },
-    "web": {},
-    "extra": {
-      "eas": {
-        "projectId": "22e6db48-36fd-42eb-85b8-8367bac7b916"
-      }
-    }
+    "web": {}
   }
 }
+
