@@ -17,11 +17,22 @@
       "bundleIdentifier": "com.cashbook.app"
     },
     "android": {
+      "package": "com.cashbook.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#ffffff"
       },
-      "package": "com.cashbook.app"
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ],
+      "playStoreUrl": "https://play.google.com/store/apps/details?id=com.cashbook.app"
+    },
+    "web": {},
+    "extra": {
+      "eas": {
+        "projectId": "22e6db48-36fd-42eb-85b8-8367bac7b916"
+      }
     }
   }
 }
-
