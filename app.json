@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Cashbook",
-    "slug": "cashbook-mobile",
+    "slug": "cashbook",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -30,8 +30,12 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-        "extra": {
-          "apiUrl": "https://cashbook-backend-2.onrender.com/api"
-        }
+    "extra": {
+      "apiUrl": "https://cashbook-backend-2.onrender.com/api",
+      "eas": {
+        "projectId": "860db25c-e05e-4adf-b73a-aac1ea5cbf56"
+      }
+    },
+    "owner": "byjanbookss-organization"
   }
 }

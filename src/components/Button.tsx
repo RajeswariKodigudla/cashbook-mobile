@@ -4,6 +4,7 @@
 
 import React from 'react';
 import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, ViewStyle, Platform } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS, TYPOGRAPHY, RADIUS, SPACING } from '../constants';
 import { isWeb, getResponsiveValue } from '../utils/responsive';
 
@@ -15,6 +16,8 @@ interface ButtonProps {
   loading?: boolean;
   disabled?: boolean;
   fullWidth?: boolean;
+  icon?: string;
+  iconPosition?: 'left' | 'right';
   style?: ViewStyle;
 }
 
@@ -26,9 +29,13 @@ export const Button: React.FC<ButtonProps> = ({
   loading = false,
   disabled = false,
   fullWidth = false,
+  icon,
+  iconPosition = 'left',
   style,
 }) => {
   const isDisabled = disabled || loading;
+  const iconColor = variant === 'primary' ? COLORS.textInverse : COLORS.primary;
+  const iconSize = size === 'sm' ? 16 : size === 'lg' ? 20 : 18;
 
   const buttonStyle = [
     styles.button,
@@ -60,11 +67,19 @@ export const Button: React.FC<ButtonProps> = ({
       }}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'primary' ? COLORS.textInverse : COLORS.primary} size="small" />
+        <ActivityIndicator color={iconColor} size="small" />
       ) : (
-        <Text style={[styles.text, styles[`text_${variant}`], styles[`textSize_${size}`]]}>
-          {title}
-        </Text>
+        <>
+          {icon && iconPosition === 'left' && (
+            <Ionicons name={icon as any} size={iconSize} color={iconColor} style={styles.iconLeft} />
+          )}
+          <Text style={[styles.text, styles[`text_${variant}`], styles[`textSize_${size}`]]}>
+            {title}
+          </Text>
+          {icon && iconPosition === 'right' && (
+            <Ionicons name={icon as any} size={iconSize} color={iconColor} style={styles.iconRight} />
+          )}
+        </>
       )}
     </TouchableOpacity>
   );
@@ -145,6 +160,12 @@ const styles = StyleSheet.create({
       userSelect: 'none',
       WebkitUserSelect: 'none',
     }),
+  },
+  iconLeft: {
+    marginRight: SPACING.xs,
+  },
+  iconRight: {
+    marginLeft: SPACING.xs,
   },
 });
 

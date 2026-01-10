@@ -7,6 +7,10 @@ import { View } from 'react-native';
 import { SafeAreaProviderWrapper } from './src/components/SafeAreaWrapper';
 import LoginScreen from './src/screens/LoginScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
+import AnalyticsScreen from './src/screens/AnalyticsScreen';
+import ModernSummaryScreen from './src/screens/ModernSummaryScreen';
+import BudgetScreen from './src/screens/BudgetScreen';
+import ReportsScreen from './src/screens/ReportsScreen';
 import { AppProvider } from './src/contexts/AppContext';
 
 // StatusBar component - loaded lazily to avoid runtime errors
@@ -70,6 +74,10 @@ const NavigationWrapper: React.FC = () => {
       >
         <Screen name="Login" component={LoginScreen} />
         <Screen name="Dashboard" component={DashboardScreen} />
+        <Screen name="Analytics" component={AnalyticsScreen} />
+        <Screen name="Summary" component={ModernSummaryScreen} />
+        <Screen name="Budget" component={BudgetScreen} />
+        <Screen name="Reports" component={ReportsScreen} />
       </Navigator>
     </Container>
   );

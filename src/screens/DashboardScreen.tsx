@@ -362,6 +362,46 @@ const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                   </View>
                 )}
               </Card>
+
+              {/* Quick Actions */}
+              <View style={styles.quickActions}>
+                <TouchableOpacity
+                  style={styles.quickActionButton}
+                  onPress={() => navigation.navigate('Analytics')}
+                >
+                  <View style={[styles.quickActionIcon, { backgroundColor: COLORS.primaryLight + '15' }]}>
+                    <Ionicons name="analytics" size={24} color={COLORS.primary} />
+                  </View>
+                  <Text style={styles.quickActionLabel}>Analytics</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.quickActionButton}
+                  onPress={() => navigation.navigate('Summary')}
+                >
+                  <View style={[styles.quickActionIcon, { backgroundColor: COLORS.successLight + '15' }]}>
+                    <Ionicons name="stats-chart" size={24} color={COLORS.success} />
+                  </View>
+                  <Text style={styles.quickActionLabel}>Summary</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.quickActionButton}
+                  onPress={() => navigation.navigate('Budget')}
+                >
+                  <View style={[styles.quickActionIcon, { backgroundColor: COLORS.warningLight + '15' }]}>
+                    <Ionicons name="wallet" size={24} color={COLORS.warning} />
+                  </View>
+                  <Text style={styles.quickActionLabel}>Budget</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.quickActionButton}
+                  onPress={() => navigation.navigate('Reports')}
+                >
+                  <View style={[styles.quickActionIcon, { backgroundColor: COLORS.primaryLight + '15' }]}>
+                    <Ionicons name="document-text" size={24} color={COLORS.primary} />
+                  </View>
+                  <Text style={styles.quickActionLabel}>Reports</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -657,6 +697,35 @@ const styles = StyleSheet.create({
   filteredCountText: {
     ...TYPOGRAPHY.caption,
     color: COLORS.primary,
+    fontWeight: '600',
+  },
+  quickActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.md,
+    gap: SPACING.sm,
+  },
+  quickActionButton: {
+    width: '48%',
+    alignItems: 'center',
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surface,
+    ...SHADOWS.sm,
+  },
+  quickActionIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: SPACING.xs,
+  },
+  quickActionLabel: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.text,
     fontWeight: '600',
   },
   searchContainer: {
