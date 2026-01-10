@@ -13,7 +13,7 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView } from './SafeAreaWrapper';
 import { Ionicons } from '@expo/vector-icons';
 import { Transaction, TransactionType } from '../types';
 import { CATEGORIES } from '../constants';

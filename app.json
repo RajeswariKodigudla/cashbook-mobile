@@ -30,8 +30,8 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "extra": {
-      "apiUrl": "http://localhost:8000/api"
-    }
+        "extra": {
+          "apiUrl": "https://cashbook-backend-2.onrender.com/api"
+        }
   }
 }

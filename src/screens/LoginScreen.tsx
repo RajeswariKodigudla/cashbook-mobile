@@ -12,7 +12,7 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView } from '../components/SafeAreaWrapper';
 import { Input } from '../components/Input';
 import { Button } from '../components/Button';
 import { useApp } from '../contexts/AppContext';

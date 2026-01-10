@@ -2,7 +2,7 @@
  * Mobile App Constants - Professional & Minimal Design
  */
 
-export const API_BASE_URL = 'http://localhost:8000/api';
+export const API_BASE_URL = 'https://cashbook-backend-2.onrender.com/api';
 
 // Professional Color Palette - Minimal & Modern
 export const COLORS = {

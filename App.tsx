@@ -3,13 +3,23 @@
  */
 
 import React from 'react';
+import { Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { StatusBar } from 'expo-status-bar';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider } from './src/components/SafeAreaWrapper';
 import LoginScreen from './src/screens/LoginScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
 import { AppProvider } from './src/contexts/AppContext';
+
+// Conditionally import StatusBar only for native platforms
+let StatusBar: any = null;
+if (Platform.OS !== 'web') {
+  try {
+    StatusBar = require('expo-status-bar').StatusBar;
+  } catch (e) {
+    console.warn('StatusBar not available:', e);
+  }
+}
 
 const Stack = createNativeStackNavigator();
 
@@ -18,7 +28,7 @@ export default function App() {
     <SafeAreaProvider>
       <AppProvider>
         <NavigationContainer>
-          <StatusBar style="auto" />
+          {StatusBar && <StatusBar style="auto" />}
           <Stack.Navigator
             screenOptions={{
               headerShown: false,

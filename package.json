@@ -7,13 +7,15 @@
     "android": "expo start --android --clear",
     "ios": "expo start --ios --clear",
     "web": "expo start --web --clear",
-    "generate-assets": "node generate-assets.js"
+    "generate-assets": "node generate-assets.js",
+    "reset": "expo start --clear --reset-cache"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.0.4",
     "@react-navigation/native": "^6.1.18",
     "@react-navigation/native-stack": "^6.11.0",
     "axios": "^1.7.9",
+    "babel-preset-expo": "~54.0.0",
     "expo": "~54.0.0",
     "expo-linear-gradient": "~14.0.1",
     "expo-secure-store": "~14.0.0",

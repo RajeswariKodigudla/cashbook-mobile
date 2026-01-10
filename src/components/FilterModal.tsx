@@ -11,7 +11,7 @@ import {
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView } from './SafeAreaWrapper';
 import { Ionicons } from '@expo/vector-icons';
 import { TransactionType, TransactionFilters } from '../types';
 import { CATEGORIES, DATE_FILTER_OPTIONS, DateFilterRange } from '../constants';
