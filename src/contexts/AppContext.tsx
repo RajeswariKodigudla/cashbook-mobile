@@ -2,19 +2,20 @@
  * App Context for mobile
  */
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useRef } from 'react';
 
-// Optional SecureStore - only use if available
-let SecureStore: any = null;
-try {
-  const store = require('expo-secure-store');
-  // Check if methods exist
-  if (store && typeof store.getItemAsync === 'function' && typeof store.setItemAsync === 'function') {
-    SecureStore = store;
+// Lazy load SecureStore to avoid runtime errors
+const getSecureStore = (): any => {
+  try {
+    const store = require('expo-secure-store');
+    if (store && typeof store.getItemAsync === 'function' && typeof store.setItemAsync === 'function') {
+      return store;
+    }
+  } catch (e) {
+    // SecureStore not available
   }
-} catch (e) {
-  // SecureStore not available
-}
+  return null;
+};
 
 interface AppContextType {
   isAuthenticated: boolean;
@@ -28,12 +29,16 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
+  const secureStoreRef = useRef<any>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
+    // Load SecureStore after component mounts (runtime is ready)
+    secureStoreRef.current = getSecureStore();
     loadAuth();
   }, []);
 
   const loadAuth = async () => {
+    const SecureStore = secureStoreRef.current;
     if (!SecureStore) return;
     try {
       const stored = await SecureStore.getItemAsync('auth');
@@ -48,6 +53,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const setAuth = async (user: string | null) => {
+    const SecureStore = secureStoreRef.current;
     if (user) {
       if (SecureStore) {
         try {

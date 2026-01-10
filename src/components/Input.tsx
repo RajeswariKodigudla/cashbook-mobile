@@ -1,10 +1,11 @@
 /**
- * Professional Input Component
+ * Professional Input Component - Responsive for Mobile & Web
  */
 
 import React from 'react';
-import { View, TextInput, Text, StyleSheet, TextInputProps } from 'react-native';
+import { View, TextInput, Text, StyleSheet, TextInputProps, Platform } from 'react-native';
 import { COLORS, TYPOGRAPHY, RADIUS, SPACING } from '../constants';
+import { isWeb } from '../utils/responsive';
 
 interface InputProps extends TextInputProps {
   label?: string;
@@ -26,6 +27,7 @@ export const Input: React.FC<InputProps> = ({
         style={[
           styles.input,
           error && styles.inputError,
+          isWeb && styles.webInput,
           style,
         ]}
         placeholderTextColor={COLORS.textTertiary}
@@ -69,6 +71,12 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
     marginTop: SPACING.xs,
+  },
+  webInput: {
+    ...(Platform.OS === 'web' && {
+      outlineStyle: 'none',
+      transition: 'border-color 0.2s ease',
+    }),
   },
 });
 

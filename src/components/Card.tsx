@@ -1,10 +1,11 @@
 /**
- * Professional Card Component
+ * Professional Card Component - Responsive for Mobile & Web
  */
 
 import React from 'react';
-import { View, StyleSheet, ViewStyle } from 'react-native';
+import { View, StyleSheet, ViewStyle, Platform } from 'react-native';
 import { COLORS, RADIUS, SHADOWS, SPACING } from '../constants';
+import { isWeb, getResponsiveValue } from '../utils/responsive';
 
 interface CardProps {
   children: React.ReactNode;
@@ -19,12 +20,19 @@ export const Card: React.FC<CardProps> = ({
   elevated = true,
   padding = 'md',
 }) => {
+  const paddingValue = getResponsiveValue(
+    SPACING[padding],
+    SPACING[padding] * 1.2,
+    SPACING[padding] * 1.5
+  );
+
   return (
     <View
       style={[
         styles.card,
         elevated && styles.elevated,
-        { padding: SPACING[padding] },
+        { padding: paddingValue },
+        isWeb && styles.webCard,
         style,
       ]}
     >
@@ -40,6 +48,11 @@ const styles = StyleSheet.create({
   },
   elevated: {
     ...SHADOWS.md,
+  },
+  webCard: {
+    ...(Platform.OS === 'web' && {
+      transition: 'box-shadow 0.2s ease, transform 0.2s ease',
+    }),
   },
 });
 

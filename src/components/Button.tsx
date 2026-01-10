@@ -1,10 +1,11 @@
 /**
- * Professional Button Component
+ * Professional Button Component - Responsive for Mobile & Web
  */
 
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, ViewStyle, TextStyle } from 'react-native';
+import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, ViewStyle, Platform } from 'react-native';
 import { COLORS, TYPOGRAPHY, RADIUS, SPACING } from '../constants';
+import { isWeb, getResponsiveValue } from '../utils/responsive';
 
 interface ButtonProps {
   title: string;
@@ -29,19 +30,34 @@ export const Button: React.FC<ButtonProps> = ({
 }) => {
   const isDisabled = disabled || loading;
 
+  const buttonStyle = [
+    styles.button,
+    styles[variant],
+    styles[`size_${size}`],
+    fullWidth && styles.fullWidth,
+    isDisabled && styles.disabled,
+    isWeb && styles.webButton,
+    style,
+  ];
+
   return (
     <TouchableOpacity
-      style={[
-        styles.button,
-        styles[variant],
-        styles[`size_${size}`],
-        fullWidth && styles.fullWidth,
-        isDisabled && styles.disabled,
-        style,
-      ]}
+      style={buttonStyle}
       onPress={onPress}
       disabled={isDisabled}
       activeOpacity={0.7}
+      // @ts-ignore - web only
+      onMouseEnter={(e: any) => {
+        if (isWeb && !isDisabled) {
+          e.currentTarget.style.opacity = '0.9';
+        }
+      }}
+      // @ts-ignore - web only
+      onMouseLeave={(e: any) => {
+        if (isWeb) {
+          e.currentTarget.style.opacity = '1';
+        }
+      }}
     >
       {loading ? (
         <ActivityIndicator color={variant === 'primary' ? COLORS.textInverse : COLORS.primary} size="small" />
@@ -121,6 +137,14 @@ const styles = StyleSheet.create({
   },
   textSize_lg: {
     fontSize: 18,
+  },
+  webButton: {
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ...(Platform.OS === 'web' && {
+      userSelect: 'none',
+      WebkitUserSelect: 'none',
+    }),
   },
 });
 

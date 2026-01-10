@@ -2,45 +2,100 @@
  * Cashbook Mobile App - React Native with Expo
  */
 
-import React from 'react';
-import { Platform } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { SafeAreaProvider } from './src/components/SafeAreaWrapper';
+import React, { useState, useEffect } from 'react';
+import { View } from 'react-native';
+import { SafeAreaProviderWrapper } from './src/components/SafeAreaWrapper';
 import LoginScreen from './src/screens/LoginScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
 import { AppProvider } from './src/contexts/AppContext';
 
-// Conditionally import StatusBar only for native platforms
-let StatusBar: any = null;
-if (Platform.OS !== 'web') {
-  try {
-    StatusBar = require('expo-status-bar').StatusBar;
-  } catch (e) {
-    console.warn('StatusBar not available:', e);
-  }
-}
+// StatusBar component - loaded lazily to avoid runtime errors
+const StatusBarComponent: React.FC = () => {
+  const [StatusBar, setStatusBar] = useState<any>(null);
 
-const Stack = createNativeStackNavigator();
+  useEffect(() => {
+    // Only load StatusBar after component mounts (runtime is ready)
+    // Don't check Platform.OS as it accesses PlatformConstants
+    try {
+      const statusBarModule = require('expo-status-bar');
+      if (statusBarModule && statusBarModule.StatusBar) {
+        setStatusBar(() => statusBarModule.StatusBar);
+      }
+    } catch (e) {
+      // StatusBar not available (e.g., on web) - silently ignore
+    }
+  }, []);
+
+  if (!StatusBar) return null;
+  return <StatusBar style="auto" />;
+};
+
+// Lazy load navigation components
+const NavigationWrapper: React.FC = () => {
+  const [NavigationContainer, setNavigationContainer] = useState<any>(null);
+  const [StackNavigator, setStackNavigator] = useState<any>(null);
+
+  useEffect(() => {
+    // Load navigation components after runtime is ready
+    try {
+      const navNative = require('@react-navigation/native');
+      const navStack = require('@react-navigation/native-stack');
+      if (navNative && navNative.NavigationContainer && navStack && navStack.createNativeStackNavigator) {
+        setNavigationContainer(() => navNative.NavigationContainer);
+        const createStack = navStack.createNativeStackNavigator;
+        const Stack = createStack();
+        setStackNavigator(Stack);
+      }
+    } catch (e) {
+      console.error('Failed to load navigation:', e);
+    }
+  }, []);
+
+  if (!NavigationContainer || !StackNavigator) {
+    return <View style={{ flex: 1, backgroundColor: '#F8FAFC' }} />;
+  }
+
+  const Container = NavigationContainer;
+  const Navigator = StackNavigator.Navigator;
+  const Screen = StackNavigator.Screen;
+  
+  return (
+    <Container>
+      <StatusBarComponent />
+      <Navigator
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: '#F8FAFC' },
+        }}
+      >
+        <Screen name="Login" component={LoginScreen} />
+        <Screen name="Dashboard" component={DashboardScreen} />
+      </Navigator>
+    </Container>
+  );
+};
 
 export default function App() {
+  const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    // Delay initialization to ensure runtime is ready
+    const timer = setTimeout(() => {
+      setIsReady(true);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!isReady) {
+    return <View style={{ flex: 1, backgroundColor: '#F8FAFC' }} />;
+  }
+
   return (
-    <SafeAreaProvider>
+    <SafeAreaProviderWrapper>
       <AppProvider>
-        <NavigationContainer>
-          {StatusBar && <StatusBar style="auto" />}
-          <Stack.Navigator
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: '#F8FAFC' },
-            }}
-          >
-            <Stack.Screen name="Login" component={LoginScreen} />
-            <Stack.Screen name="Dashboard" component={DashboardScreen} />
-          </Stack.Navigator>
-        </NavigationContainer>
+        <NavigationWrapper />
       </AppProvider>
-    </SafeAreaProvider>
+    </SafeAreaProviderWrapper>
   );
 }
 

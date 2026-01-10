@@ -11,7 +11,7 @@ import {
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
-import { SafeAreaView } from './SafeAreaWrapper';
+import { SafeAreaViewWrapper } from './SafeAreaWrapper';
 import { Ionicons } from '@expo/vector-icons';
 import { TransactionType, TransactionFilters } from '../types';
 import { CATEGORIES, DATE_FILTER_OPTIONS, DateFilterRange } from '../constants';
@@ -60,7 +60,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaViewWrapper style={styles.container} edges={['top']}>
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
@@ -235,7 +235,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
             />
           </View>
         </ScrollView>
-      </SafeAreaView>
+      </SafeAreaViewWrapper>
     </Modal>
   );
 };

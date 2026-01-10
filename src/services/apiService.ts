@@ -6,17 +6,18 @@ import axios from 'axios';
 import { API_BASE_URL } from '../constants';
 import { Transaction } from '../types';
 
-// Optional SecureStore - only use if available
-let SecureStore: any = null;
-try {
-  const store = require('expo-secure-store');
-  // Check if methods exist
-  if (store && typeof store.getItemAsync === 'function' && typeof store.setItemAsync === 'function') {
-    SecureStore = store;
+// Lazy load SecureStore to avoid runtime errors
+const getSecureStore = (): any => {
+  try {
+    const store = require('expo-secure-store');
+    if (store && typeof store.getItemAsync === 'function' && typeof store.setItemAsync === 'function') {
+      return store;
+    }
+  } catch (e) {
+    // SecureStore not available
   }
-} catch (e) {
-  // SecureStore not available
-}
+  return null;
+};
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -34,6 +35,7 @@ export const transactionService = {
     } catch (error) {
       console.error('Error fetching transactions:', error);
       // Fallback to local storage if available
+      const SecureStore = getSecureStore();
       if (SecureStore) {
         try {
           const stored = await SecureStore.getItemAsync('transactions');
@@ -84,6 +86,7 @@ export const transactionService = {
       if (transactions.length >= 0) {
         console.log('✅ Saving', transactions.length, 'transactions to storage');
         // Save to SecureStore if available (optional - backend is source of truth)
+        const SecureStore = getSecureStore();
         if (SecureStore) {
           try {
             await SecureStore.setItemAsync('transactions', JSON.stringify(transactions));
@@ -115,6 +118,7 @@ export const transactionService = {
         
         if (transactions.length >= 0) {
           // Save to SecureStore if available
+          const SecureStore = getSecureStore();
           if (SecureStore) {
             try {
               await SecureStore.setItemAsync('transactions', JSON.stringify(transactions));
@@ -168,6 +172,7 @@ export const transactionService = {
       
       const response = await api.put<Transaction[]>(`/transactions/${id}/`, updateData);
       // Save to SecureStore if available
+      const SecureStore = getSecureStore();
       if (SecureStore) {
         try {
           await SecureStore.setItemAsync('transactions', JSON.stringify(response.data));
@@ -189,6 +194,7 @@ export const transactionService = {
     try {
       const response = await api.delete<Transaction[]>(`/transactions/${id}/`);
       // Save to SecureStore if available
+      const SecureStore = getSecureStore();
       if (SecureStore) {
         try {
           await SecureStore.setItemAsync('transactions', JSON.stringify(response.data));

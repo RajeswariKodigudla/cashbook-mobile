@@ -13,7 +13,7 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from './SafeAreaWrapper';
+import { SafeAreaViewWrapper } from './SafeAreaWrapper';
 import { Ionicons } from '@expo/vector-icons';
 import { Transaction, TransactionType } from '../types';
 import { CATEGORIES } from '../constants';
@@ -131,7 +131,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaViewWrapper style={styles.container} edges={['top']}>
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
@@ -280,7 +280,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
             />
           </View>
         </ScrollView>
-      </SafeAreaView>
+      </SafeAreaViewWrapper>
     </Modal>
   );
 };

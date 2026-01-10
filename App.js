@@ -1,7 +1,5 @@
-import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { StatusBar } from 'expo-status-bar';
+import React, { useState, useEffect } from 'react';
+import { View } from 'react-native';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
@@ -21,19 +19,63 @@ import SettingsScreen from './src/screens/SettingsScreen';
 import FAQScreen from './src/screens/FAQScreen';
 import EditTransactionScreen from './src/screens/EditTransactionScreen';
 
-const Stack = createNativeStackNavigator();
+// All navigation components are now lazy loaded inside AppNavigator
+
+// StatusBar component - loaded lazily to avoid runtime errors
+const StatusBarComponent = () => {
+  const [StatusBar, setStatusBar] = useState(null);
+
+  useEffect(() => {
+    // Only load StatusBar after component mounts (runtime is ready)
+    // Don't check Platform.OS as it accesses PlatformConstants
+    try {
+      const statusBarModule = require('expo-status-bar');
+      if (statusBarModule && statusBarModule.StatusBar) {
+        setStatusBar(() => statusBarModule.StatusBar);
+      }
+    } catch (e) {
+      // StatusBar not available (e.g., on web) - silently ignore
+    }
+  }, []);
+
+  if (!StatusBar) return null;
+  return <StatusBar style="auto" />;
+};
 
 function AppNavigator() {
   const { isAuthenticated, loading } = useAuth();
+  const [navReady, setNavReady] = useState(false);
+  const [navComponents, setNavComponents] = useState(null);
 
-  if (loading) {
-    return null; // Loading screen
+  useEffect(() => {
+    // Load navigation after runtime is ready
+    try {
+      const navNative = require('@react-navigation/native');
+      const navStack = require('@react-navigation/native-stack');
+      if (navNative && navNative.NavigationContainer && navStack && navStack.createNativeStackNavigator) {
+        const Container = navNative.NavigationContainer;
+        const createStack = navStack.createNativeStackNavigator;
+        const Stack = createStack();
+        setNavComponents({ Container, Stack });
+        setNavReady(true);
+      }
+    } catch (e) {
+      console.error('Failed to load navigation:', e);
+    }
+  }, []);
+
+  if (loading || !navReady || !navComponents) {
+    return <View style={{ flex: 1, backgroundColor: '#F8FAFC' }} />;
   }
 
+  const { Container, Stack } = navComponents;
+  const Navigator = Stack.Navigator;
+  const Screen = Stack.Screen;
+
   return (
-    <NavigationContainer>
-      <StatusBar style="auto" />
-      <Stack.Navigator
+    <Container>
+      <StatusBarComponent />
+      <Navigator
         screenOptions={{
           headerStyle: {
             backgroundColor: '#007AFF',
@@ -45,98 +87,98 @@ function AppNavigator() {
         }}
         initialRouteName={isAuthenticated ? 'Home' : 'Login'}
       >
-        <Stack.Screen
+        <Screen
           name="Login"
           component={LoginScreen}
           options={{ headerShown: false }}
         />
-        <Stack.Screen
+        <Screen
           name="Home"
           component={HomeScreen}
           options={{ headerShown: false }}
         />
-        <Stack.Screen
+        <Screen
           name="Income"
           component={IncomeScreen}
           options={{ title: 'Add Income' }}
         />
-        <Stack.Screen
+        <Screen
           name="Expense"
           component={ExpenseScreen}
           options={{ title: 'Add Expense' }}
         />
-        <Stack.Screen
+        <Screen
           name="Calendar"
           component={CalendarScreen}
           options={{ title: 'Calendar' }}
         />
-        <Stack.Screen
+        <Screen
           name="Summary"
           component={SummaryScreen}
           options={{ title: 'Summary' }}
         />
-        <Stack.Screen
+        <Screen
           name="Alltransactions"
           component={AllTransactionsScreen}
           options={{ title: 'All Transactions' }}
         />
-        <Stack.Screen
+        <Screen
           name="Export"
           component={ExportScreen}
           options={{ title: 'Export' }}
         />
-        <Stack.Screen
+        <Screen
           name="Bookmark"
           component={BookmarkScreen}
           options={{ title: 'Bookmark' }}
         />
-        <Stack.Screen
+        <Screen
           name="Notebook"
           component={NotebookScreen}
           options={{ title: 'Notebook' }}
         />
-        <Stack.Screen
+        <Screen
           name="Cashcounter"
           component={CashCounterScreen}
           options={{ title: 'Cash Counter' }}
         />
-        <Stack.Screen
+        <Screen
           name="Calculator"
           component={CalculatorScreen}
           options={{ title: 'Calculator' }}
         />
-        <Stack.Screen
+        <Screen
           name="Backuprestore"
           component={BackupRestoreScreen}
           options={{ title: 'Backup & Restore' }}
         />
-        <Stack.Screen
+        <Screen
           name="BackupRestore"
           component={BackupRestoreScreen}
           options={{ title: 'Backup & Restore' }}
         />
-        <Stack.Screen
+        <Screen
           name="Applock"
           component={AppLockScreen}
           options={{ title: 'App Lock' }}
         />
-        <Stack.Screen
+        <Screen
           name="Settings"
           component={SettingsScreen}
           options={{ title: 'Settings' }}
         />
-        <Stack.Screen
+        <Screen
           name="Faq"
           component={FAQScreen}
           options={{ title: 'FAQ' }}
         />
-        <Stack.Screen
+        <Screen
           name="EditTransaction"
           component={EditTransactionScreen}
           options={{ title: 'Edit Transaction' }}
         />
-      </Stack.Navigator>
-    </NavigationContainer>
+      </Navigator>
+    </Container>
   );
 }
 

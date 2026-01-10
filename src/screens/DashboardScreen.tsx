@@ -2,24 +2,24 @@
  * Professional Dashboard Screen - Complete Cashbook Features
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   TouchableOpacity,
   RefreshControl,
   TextInput,
   Alert,
   ActivityIndicator,
   ScrollView,
+  Animated,
 } from 'react-native';
-import { SafeAreaView } from '../components/SafeAreaWrapper';
+import { SafeAreaViewWrapper } from '../components/SafeAreaWrapper';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../contexts/AppContext';
 import { transactionService } from '../services/apiService';
-import { Transaction, TransactionType, TransactionFilters } from '../types';
+import { Transaction, TransactionFilters } from '../types';
 import { COLORS, CATEGORIES, DATE_FILTER_OPTIONS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants';
 import { formatCurrency, formatDate, formatRelativeTime } from '../utils/formatUtils';
 import { isInDateRange } from '../utils/dateUtils';
@@ -27,7 +27,7 @@ import { getCategoryIcon } from '../utils/iconUtils';
 import { Card } from '../components/Card';
 import { TransactionForm } from '../components/TransactionForm';
 import { FilterModal } from '../components/FilterModal';
-import { DateFilterRange } from '../constants';
+import { isWeb, getResponsiveValue } from '../utils/responsive';
 
 const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const { username, logout } = useApp();
@@ -44,6 +44,7 @@ const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     type: undefined,
     categoryId: undefined,
   });
+  const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     console.log('Dashboard mounted, loading transactions...');
@@ -110,16 +111,27 @@ const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
   const stats = useMemo(() => {
     // Calculate stats from ALL transactions (not filtered)
+    // Ensure amounts are valid numbers
     const income = transactions
-      .filter(tx => tx.type === 'INCOME')
-      .reduce((sum, tx) => sum + tx.amount, 0);
+      .filter(tx => tx.type === 'INCOME' && tx.amount != null && !isNaN(tx.amount))
+      .reduce((sum, tx) => {
+        const amount = typeof tx.amount === 'number' ? tx.amount : parseFloat(tx.amount) || 0;
+        return sum + amount;
+      }, 0);
+    
     const expenses = transactions
-      .filter(tx => tx.type === 'EXPENSE')
-      .reduce((sum, tx) => sum + tx.amount, 0);
+      .filter(tx => tx.type === 'EXPENSE' && tx.amount != null && !isNaN(tx.amount))
+      .reduce((sum, tx) => {
+        const amount = typeof tx.amount === 'number' ? tx.amount : parseFloat(tx.amount) || 0;
+        return sum + amount;
+      }, 0);
+    
+    const balance = income - expenses;
+    
     return {
-      balance: income - expenses,
-      income,
-      expenses,
+      balance: isNaN(balance) ? 0 : balance,
+      income: isNaN(income) ? 0 : income,
+      expenses: isNaN(expenses) ? 0 : expenses,
       transactionCount: transactions.length, // Total count
       filteredCount: filteredTransactions.length, // Filtered count
     };
@@ -200,7 +212,11 @@ const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   };
 
   const clearFilters = () => {
-    setFilters({ dateRange: 'ALL' });
+    setFilters({
+      dateRange: 'ALL',
+      type: undefined,
+      categoryId: undefined,
+    });
     setSearchQuery('');
   };
 
@@ -232,7 +248,7 @@ const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                     {category?.label || 'Unknown'}
                   </Text>
                   <Text style={[styles.amountText, isIncome ? styles.amountIncome : styles.amountExpense]}>
-                    {isIncome ? '+' : '-'}{formatCurrency(Math.abs(item.amount))}
+                    {isIncome ? '+' : '-'}{formatCurrency(Math.abs(item.amount || 0))}
                   </Text>
                 </View>
                 {item.note && (
@@ -283,53 +299,74 @@ const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <View>
-            <Text style={styles.headerTitle}>Cashbook</Text>
-            <Text style={styles.headerSubtitle}>Welcome, {username}</Text>
-          </View>
-          <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-            <Ionicons name="log-out-outline" size={24} color={COLORS.text} />
-          </TouchableOpacity>
-        </View>
+    <SafeAreaViewWrapper style={styles.container} edges={['top']}>
+      <ScrollView
+        ref={scrollViewRef}
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={true}
+        stickyHeaderIndices={[0]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              loadTransactions();
+            }}
+            tintColor={COLORS.primary}
+          />
+        }
+      >
+        {/* Combined Sticky Header + Filters Section */}
+        <View style={styles.stickyHeaderSection}>
+          {/* Header Content */}
+          <View style={[styles.headerContent, isWeb && { maxWidth: getResponsiveValue(800, 1000, 1200), alignSelf: 'center', width: '100%' }]}>
+            <View style={styles.header}>
+              <View style={styles.headerTop}>
+                <View>
+                  <Text style={styles.headerTitle}>Cashbook</Text>
+                  <Text style={styles.headerSubtitle}>Welcome, {username || 'User'}</Text>
+                </View>
+                <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
+                  <Ionicons name="log-out-outline" size={24} color={COLORS.text} />
+                </TouchableOpacity>
+              </View>
 
-        {/* Balance Card */}
-        <Card style={styles.balanceCard} elevated>
-          <Text style={styles.balanceLabel}>Total Balance</Text>
-          <Text style={[styles.balanceAmount, stats.balance >= 0 ? styles.balancePositive : styles.balanceNegative]}>
-            {formatCurrency(stats.balance)}
-          </Text>
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Total Income</Text>
-              <Text style={styles.statValueIncome}>{formatCurrency(stats.income)}</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Total Expenses</Text>
-              <Text style={styles.statValueExpense}>{formatCurrency(stats.expenses)}</Text>
-            </View>
-          </View>
-          {stats.transactionCount > 0 && (
-            <View style={styles.transactionCountRow}>
-              <Text style={styles.transactionCountText}>
-                {stats.transactionCount} transaction{stats.transactionCount !== 1 ? 's' : ''}
-                {stats.filteredCount !== stats.transactionCount && (
-                  <Text style={styles.filteredCountText}>
-                    {' '}({stats.filteredCount} shown)
-                  </Text>
+              {/* Balance Card */}
+              <Card style={styles.balanceCard} elevated>
+                <Text style={styles.balanceLabel}>Total Balance</Text>
+                <Text style={[styles.balanceAmount, stats.balance >= 0 ? styles.balancePositive : styles.balanceNegative]}>
+                  {formatCurrency(stats.balance)}
+                </Text>
+                <View style={styles.statsRow}>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statLabel}>Total Income</Text>
+                    <Text style={styles.statValueIncome}>{formatCurrency(stats.income)}</Text>
+                  </View>
+                  <View style={styles.statDivider} />
+                  <View style={styles.statItem}>
+                    <Text style={styles.statLabel}>Total Expenses</Text>
+                    <Text style={styles.statValueExpense}>{formatCurrency(stats.expenses)}</Text>
+                  </View>
+                </View>
+                {stats.transactionCount > 0 && (
+                  <View style={styles.transactionCountRow}>
+                    <Text style={styles.transactionCountText}>
+                      {stats.transactionCount} transaction{stats.transactionCount !== 1 ? 's' : ''}
+                      {stats.filteredCount !== stats.transactionCount && (
+                        <Text style={styles.filteredCountText}>
+                          {' '}({stats.filteredCount} shown)
+                        </Text>
+                      )}
+                    </Text>
+                  </View>
                 )}
-              </Text>
+              </Card>
             </View>
-          )}
-        </Card>
-      </View>
+          </View>
 
-      {/* Enhanced Search & Filters */}
-      <View style={styles.filtersContainer}>
+          {/* Filters Section */}
+          <View style={styles.filtersSectionInner}>
         {/* Search Bar */}
         <View style={styles.searchContainer}>
           <Ionicons name="search" size={20} color={COLORS.textSecondary} style={styles.searchIcon} />
@@ -419,50 +456,42 @@ const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               </TouchableOpacity>
             </ScrollView>
           )}
-        </View>
-      </View>
-
-      {/* Transactions List */}
-      <View style={styles.content}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>
-            Transactions ({filteredTransactions.length})
-          </Text>
-        </View>
-
-        {loading && transactions.length === 0 ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingText}>Loading transactions...</Text>
           </View>
-        ) : filteredTransactions.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="document-text-outline" size={64} color={COLORS.textTertiary} />
-            <Text style={styles.emptyText}>No transactions found</Text>
-            <Text style={styles.emptySubtext}>
-              {hasActiveFilters ? 'Try adjusting your filters' : 'Tap + to add your first transaction'}
+        </View>
+        </View>
+
+        {/* Transactions List Section */}
+        <View style={styles.transactionsSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>
+              Transactions ({filteredTransactions.length})
             </Text>
           </View>
-        ) : (
-          <FlatList
-            data={filteredTransactions}
-            renderItem={renderTransaction}
-            keyExtractor={(item) => item.id}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={() => {
-                  setRefreshing(true);
-                  loadTransactions();
-                }}
-                tintColor={COLORS.primary}
-              />
-            }
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-          />
-        )}
-      </View>
+
+          {loading && transactions.length === 0 ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+              <Text style={styles.loadingText}>Loading transactions...</Text>
+            </View>
+          ) : filteredTransactions.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="document-text-outline" size={64} color={COLORS.textTertiary} />
+              <Text style={styles.emptyText}>No transactions found</Text>
+              <Text style={styles.emptySubtext}>
+                {hasActiveFilters ? 'Try adjusting your filters' : 'Tap + to add your first transaction'}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.transactionsList}>
+              {filteredTransactions.map((item) => (
+                <View key={item.id}>
+                  {renderTransaction({ item })}
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      </ScrollView>
 
       {/* FAB */}
       <TouchableOpacity
@@ -498,18 +527,18 @@ const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         editingTransaction={editingTransaction}
       />
 
-      {/* Filter Modal */}
-      <FilterModal
-        visible={showFilters}
-        onClose={() => setShowFilters(false)}
-        filters={filters}
-        onApply={(newFilters) => {
-          setFilters(newFilters);
-          setShowFilters(false);
-        }}
-        onClear={clearFilters}
-      />
-    </SafeAreaView>
+        {/* Filter Modal */}
+        <FilterModal
+          visible={showFilters}
+          onClose={() => setShowFilters(false)}
+          filters={filters}
+          onApply={(newFilters) => {
+            setFilters(newFilters);
+            setShowFilters(false);
+          }}
+          onClear={clearFilters}
+        />
+    </SafeAreaViewWrapper>
   );
 };
 
@@ -518,13 +547,36 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  header: {
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 100,
+  },
+  // Combined Sticky Header Section
+  stickyHeaderSection: {
     backgroundColor: COLORS.surface,
-    paddingTop: SPACING.md,
-    paddingBottom: SPACING.lg,
-    paddingHorizontal: SPACING.md,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
+    zIndex: 10,
+    elevation: 4,
+    ...(isWeb && {
+      // @ts-ignore - web only
+      boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+    }),
+  },
+  filtersSectionInner: {
+    paddingVertical: SPACING.md,
+    width: '100%',
+  },
+  headerContent: {
+    width: '100%',
+    paddingHorizontal: getResponsiveValue(SPACING.md, SPACING.lg, SPACING.xl),
+  },
+  header: {
+    paddingTop: getResponsiveValue(SPACING.md, SPACING.lg, SPACING.xl),
+    paddingBottom: getResponsiveValue(SPACING.lg, SPACING.xl, SPACING.xxl),
   },
   headerTop: {
     flexDirection: 'row',
@@ -606,12 +658,6 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.caption,
     color: COLORS.primary,
     fontWeight: '600',
-  },
-  filtersContainer: {
-    backgroundColor: COLORS.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-    paddingVertical: SPACING.md,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -714,8 +760,15 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.captionBold,
     color: COLORS.error,
   },
-  content: {
-    flex: 1,
+  // Transactions Section
+  transactionsSection: {
+    width: '100%',
+    backgroundColor: COLORS.background,
+    minHeight: 400,
+  },
+  transactionsList: {
+    padding: getResponsiveValue(SPACING.md, SPACING.lg, SPACING.xl),
+    paddingBottom: 20,
   },
   sectionHeader: {
     paddingHorizontal: SPACING.md,
@@ -727,11 +780,22 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
   listContent: {
-    padding: SPACING.md,
+    padding: getResponsiveValue(SPACING.md, SPACING.lg, SPACING.xl),
     paddingBottom: 100,
+    ...(isWeb && {
+      // @ts-ignore - web only
+      display: 'grid',
+      gridTemplateColumns: getResponsiveValue('1fr', 'repeat(2, 1fr)', 'repeat(3, 1fr)'),
+      gap: getResponsiveValue(SPACING.md, SPACING.lg, SPACING.xl),
+    }),
   },
   transactionCard: {
-    marginBottom: SPACING.md,
+    marginBottom: getResponsiveValue(SPACING.md, SPACING.lg, SPACING.xl),
+    ...(isWeb && {
+      // @ts-ignore - web only
+      transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+      cursor: 'pointer',
+    }),
   },
   transactionContent: {
     flexDirection: 'row',
