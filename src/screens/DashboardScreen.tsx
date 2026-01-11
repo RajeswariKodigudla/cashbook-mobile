@@ -18,6 +18,7 @@ import {
 import { SafeAreaViewWrapper } from '../components/SafeAreaWrapper';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../contexts/AppContext';
+import { useAuth } from '../contexts/AuthContext';
 import { transactionService } from '../services/apiService';
 import { Transaction, TransactionFilters } from '../types';
 import { COLORS, CATEGORIES, DATE_FILTER_OPTIONS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants';
@@ -30,7 +31,8 @@ import { FilterModal } from '../components/FilterModal';
 import { isWeb, getResponsiveValue } from '../utils/responsive';
 
 const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { username, logout } = useApp();
+  const { username } = useApp();
+  const { logout: authLogout, user: authUser } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -198,14 +200,26 @@ const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   };
 
   const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure?', [
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Logout',
         style: 'destructive',
         onPress: async () => {
-          await logout();
-          navigation.replace('Login');
+          try {
+            await authLogout();
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Login' }],
+            });
+          } catch (error) {
+            console.error('Logout error:', error);
+            // Force navigation even if logout fails
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Login' }],
+            });
+          }
         },
       },
     ]);
@@ -305,7 +319,6 @@ const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={true}
-        stickyHeaderIndices={[0]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -317,15 +330,17 @@ const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           />
         }
       >
-        {/* Combined Sticky Header + Filters Section */}
-        <View style={styles.stickyHeaderSection}>
+        {/* Header Section - Non-sticky, scrolls with content */}
+        <View style={styles.headerSection}>
           {/* Header Content */}
           <View style={[styles.headerContent, isWeb && { maxWidth: getResponsiveValue(800, 1000, 1200), alignSelf: 'center', width: '100%' }]}>
             <View style={styles.header}>
               <View style={styles.headerTop}>
                 <View>
                   <Text style={styles.headerTitle}>Cashbook</Text>
-                  <Text style={styles.headerSubtitle}>Welcome, {username || 'User'}</Text>
+                  <Text style={styles.headerSubtitle}>
+                    Welcome, {authUser?.username || username || 'User'}
+                  </Text>
                 </View>
                 <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
                   <Ionicons name="log-out-outline" size={24} color={COLORS.text} />
@@ -592,15 +607,13 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 100,
+    paddingBottom: 120,
   },
-  // Combined Sticky Header Section
-  stickyHeaderSection: {
+  // Header Section - Scrolls with content
+  headerSection: {
     backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
-    zIndex: 10,
-    elevation: 4,
     ...(isWeb && {
       // @ts-ignore - web only
       boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
@@ -834,6 +847,7 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: COLORS.background,
     minHeight: 400,
+    marginTop: SPACING.md,
   },
   transactionsList: {
     padding: getResponsiveValue(SPACING.md, SPACING.lg, SPACING.xl),
@@ -851,12 +865,14 @@ const styles = StyleSheet.create({
   listContent: {
     padding: getResponsiveValue(SPACING.md, SPACING.lg, SPACING.xl),
     paddingBottom: 100,
-    ...(isWeb && {
-      // @ts-ignore - web only
-      display: 'grid',
+    ...(isWeb ? {
+      // @ts-ignore - web only CSS properties
+      display: 'grid' as any,
+      // @ts-ignore
       gridTemplateColumns: getResponsiveValue('1fr', 'repeat(2, 1fr)', 'repeat(3, 1fr)'),
+      // @ts-ignore
       gap: getResponsiveValue(SPACING.md, SPACING.lg, SPACING.xl),
-    }),
+    } : {}),
   },
   transactionCard: {
     marginBottom: getResponsiveValue(SPACING.md, SPACING.lg, SPACING.xl),

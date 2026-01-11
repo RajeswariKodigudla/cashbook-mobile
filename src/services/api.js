@@ -121,6 +121,19 @@ export const authAPI = {
       return { user: { username: 'User' } };
     }
   },
+
+  logout: async (refreshToken) => {
+    console.log('📡 Sending logout request to:', `${API_BASE_URL}/logout/`);
+    try {
+      const response = await api.post('/logout/', { refresh: refreshToken });
+      console.log('📡 Logout API response:', response);
+      return response;
+    } catch (error) {
+      // Don't throw - logout should always succeed on client side
+      console.log('Logout API error (non-critical):', error);
+      return { success: true, message: 'Logged out' };
+    }
+  },
 };
 
 // Transactions API

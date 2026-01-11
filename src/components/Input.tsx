@@ -11,28 +11,34 @@ interface InputProps extends TextInputProps {
   label?: string;
   error?: string;
   helperText?: string;
+  rightIcon?: React.ReactNode;
 }
 
 export const Input: React.FC<InputProps> = ({
   label,
   error,
   helperText,
+  rightIcon,
   style,
   ...props
 }) => {
   return (
     <View style={styles.container}>
       {label && <Text style={styles.label}>{label}</Text>}
-      <TextInput
-        style={[
-          styles.input,
-          error && styles.inputError,
-          isWeb && styles.webInput,
-          style,
-        ]}
-        placeholderTextColor={COLORS.textTertiary}
-        {...props}
-      />
+      <View style={styles.inputWrapper}>
+        <TextInput
+          style={[
+            styles.input,
+            error && styles.inputError,
+            isWeb && styles.webInput,
+            rightIcon && styles.inputWithIcon,
+            style,
+          ]}
+          placeholderTextColor={COLORS.textTertiary}
+          {...props}
+        />
+        {rightIcon && <View style={styles.rightIconContainer}>{rightIcon}</View>}
+      </View>
       {error && <Text style={styles.errorText}>{error}</Text>}
       {helperText && !error && <Text style={styles.helperText}>{helperText}</Text>}
     </View>
@@ -48,6 +54,9 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginBottom: SPACING.sm,
   },
+  inputWrapper: {
+    position: 'relative',
+  },
   input: {
     ...TYPOGRAPHY.body,
     backgroundColor: COLORS.surface,
@@ -58,6 +67,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     color: COLORS.text,
     minHeight: 44,
+  },
+  inputWithIcon: {
+    paddingRight: 48,
+  },
+  rightIconContainer: {
+    position: 'absolute',
+    right: SPACING.md,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   inputError: {
     borderColor: COLORS.error,

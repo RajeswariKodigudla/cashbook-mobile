@@ -10,41 +10,60 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   Alert,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaViewWrapper } from '../components/SafeAreaWrapper';
 import { Input } from '../components/Input';
 import { Button } from '../components/Button';
 import { Container } from '../components/Container';
 import { Card } from '../components/Card';
-import { useApp } from '../contexts/AppContext';
+import { useAuth } from '../contexts/AuthContext';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants';
 import { Ionicons } from '@expo/vector-icons';
 import { isWeb, getResponsiveValue } from '../utils/responsive';
+import { login } from '../services/auth';
 
 const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { setAuth } = useApp();
+  const { login: authLogin } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState('');
 
   const handleLogin = async () => {
     if (!username.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please enter both username and password');
+      setError('Please enter both username and password');
       return;
     }
 
     setLoading(true);
+    setError('');
 
-    // Simple authentication
-    setTimeout(() => {
-      if (username === 'admin' && password === 'admin123') {
-        setAuth(username);
-        navigation.replace('Dashboard');
+    try {
+      console.log('🔐 Attempting login for:', username);
+      
+      const result = await login(username, password);
+      
+      if (result.success) {
+        // Update auth context
+        authLogin(result.user, result.token);
+        console.log('✅ Login successful');
+        
+        // Navigate to dashboard
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Dashboard' }],
+        });
       } else {
-        Alert.alert('Error', 'Invalid credentials');
+        setError(result.message || 'Invalid credentials');
       }
+    } catch (error: any) {
+      console.error('❌ Login error:', error);
+      setError(error.message || 'Login failed. Please try again.');
+    } finally {
       setLoading(false);
-    }, 500);
+    }
   };
 
   const logoSize = getResponsiveValue(72, 88, 96);
@@ -107,12 +126,28 @@ const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       label="Password"
                       placeholder="Enter your password"
                       value={password}
-                      onChangeText={setPassword}
-                      secureTextEntry
+                      onChangeText={(text) => {
+                        setPassword(text);
+                        setError('');
+                      }}
+                      secureTextEntry={!showPassword}
                       autoCapitalize="none"
                       autoCorrect={false}
                       editable={!loading}
                       onSubmitEditing={handleLogin}
+                      error={error}
+                      rightIcon={
+                        <TouchableOpacity
+                          onPress={() => setShowPassword(!showPassword)}
+                          style={styles.iconButton}
+                        >
+                          <Ionicons
+                            name={showPassword ? 'eye-off' : 'eye'}
+                            size={20}
+                            color={COLORS.textSecondary}
+                          />
+                        </TouchableOpacity>
+                      }
                     />
                   </View>
                 </View>
@@ -130,24 +165,26 @@ const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                   />
                 </View>
 
-                {/* Info Section */}
-                <View style={styles.infoSection}>
-                  <View style={styles.infoCard}>
-                    <Ionicons name="information-circle" size={18} color={COLORS.primary} />
-                    <View style={styles.infoContent}>
-                      <Text style={styles.infoTitle}>Demo Credentials</Text>
-                      <Text style={styles.infoText}>Username: admin | Password: admin123</Text>
+                {/* Error Display */}
+                {error && (
+                  <View style={styles.errorSection}>
+                    <View style={styles.errorCard}>
+                      <Ionicons name="alert-circle" size={18} color={COLORS.error} />
+                      <Text style={styles.errorText}>{error}</Text>
                     </View>
                   </View>
-                </View>
+                )}
               </Card>
 
               {/* Footer Section */}
               <View style={styles.footerSection}>
-                <View style={styles.footerCard}>
-                  <Ionicons name="shield-checkmark" size={20} color={COLORS.success} />
-                  <Text style={styles.footerText}>Secure & Encrypted</Text>
-                </View>
+                <Text style={styles.footerText}>Don't have an account?</Text>
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('Signup')}
+                  style={styles.linkButton}
+                >
+                  <Text style={styles.linkText}>Sign Up</Text>
+                </TouchableOpacity>
               </View>
             </View>
           </Container>
@@ -261,6 +298,9 @@ const styles = StyleSheet.create({
   inputGroup: {
     marginBottom: SPACING.lg,
   },
+  iconButton: {
+    padding: SPACING.xs,
+  },
   // Action Section
   actionSection: {
     marginTop: SPACING.lg,
@@ -269,54 +309,46 @@ const styles = StyleSheet.create({
   button: {
     // Button styles handled by component
   },
-  // Info Section
-  infoSection: {
+  // Error Section
+  errorSection: {
     marginTop: SPACING.lg,
-    paddingTop: SPACING.lg,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.borderLight,
   },
-  infoCard: {
+  errorCard: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: COLORS.primaryLight + '08',
+    alignItems: 'center',
+    backgroundColor: COLORS.errorLight + '15',
     padding: SPACING.md,
     borderRadius: RADIUS.md,
     gap: SPACING.sm,
     borderWidth: 1,
-    borderColor: COLORS.primaryLight + '20',
+    borderColor: COLORS.errorLight + '30',
   },
-  infoContent: {
-    flex: 1,
-  },
-  infoTitle: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.primary,
-    marginBottom: SPACING.xs / 2,
-    fontSize: 13,
-  },
-  infoText: {
+  errorText: {
     ...TYPOGRAPHY.caption,
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    lineHeight: 18,
+    color: COLORS.error,
+    fontSize: 13,
+    flex: 1,
   },
   // Footer Section
   footerSection: {
     marginTop: SPACING.lg,
     alignItems: 'center',
-  },
-  footerCard: {
     flexDirection: 'row',
-    alignItems: 'center',
+    justifyContent: 'center',
     gap: SPACING.xs,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
   },
   footerText: {
     ...TYPOGRAPHY.caption,
     color: COLORS.textTertiary,
-    fontSize: 12,
+    fontSize: 14,
+  },
+  linkButton: {
+    padding: SPACING.xs,
+  },
+  linkText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.primary,
+    fontSize: 14,
   },
 });
 

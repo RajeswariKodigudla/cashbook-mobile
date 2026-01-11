@@ -131,9 +131,25 @@ export const register = async (username, email, password, password_confirm, firs
 };
 
 export const logout = async () => {
-  await removeAuthToken();
-  await AsyncStorage.removeItem('refreshToken');
-  await AsyncStorage.removeItem('current_account');
+  try {
+    // Try to blacklist the refresh token on the server
+    const refreshToken = await AsyncStorage.getItem('refreshToken');
+    if (refreshToken) {
+      try {
+        await authAPI.logout(refreshToken);
+      } catch (error) {
+        // Log but don't fail - client-side cleanup will still happen
+        console.log('Server logout failed (non-critical):', error);
+      }
+    }
+  } catch (error) {
+    console.log('Logout error (non-critical):', error);
+  } finally {
+    // Always perform client-side cleanup
+    await removeAuthToken();
+    await AsyncStorage.removeItem('refreshToken');
+    await AsyncStorage.removeItem('current_account');
+  }
 };
 
 export const isAuthenticated = async () => {

@@ -6,12 +6,14 @@ import React, { useState, useEffect } from 'react';
 import { View } from 'react-native';
 import { SafeAreaProviderWrapper } from './src/components/SafeAreaWrapper';
 import LoginScreen from './src/screens/LoginScreen';
+import SignupScreen from './src/screens/SignupScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
 import AnalyticsScreen from './src/screens/AnalyticsScreen';
 import ModernSummaryScreen from './src/screens/ModernSummaryScreen';
 import BudgetScreen from './src/screens/BudgetScreen';
 import ReportsScreen from './src/screens/ReportsScreen';
 import { AppProvider } from './src/contexts/AppContext';
+import { AuthProvider } from './src/contexts/AuthContext';
 
 // StatusBar component - loaded lazily to avoid runtime errors
 const StatusBarComponent: React.FC = () => {
@@ -71,8 +73,10 @@ const NavigationWrapper: React.FC = () => {
           headerShown: false,
           contentStyle: { backgroundColor: '#F8FAFC' },
         }}
+        initialRouteName="Login"
       >
         <Screen name="Login" component={LoginScreen} />
+        <Screen name="Signup" component={SignupScreen} />
         <Screen name="Dashboard" component={DashboardScreen} />
         <Screen name="Analytics" component={AnalyticsScreen} />
         <Screen name="Summary" component={ModernSummaryScreen} />
@@ -100,9 +104,11 @@ export default function App() {
 
   return (
     <SafeAreaProviderWrapper>
-      <AppProvider>
-        <NavigationWrapper />
-      </AppProvider>
+      <AuthProvider>
+        <AppProvider>
+          <NavigationWrapper />
+        </AppProvider>
+      </AuthProvider>
     </SafeAreaProviderWrapper>
   );
 }

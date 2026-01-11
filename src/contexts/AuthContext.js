@@ -1,6 +1,6 @@
-// Auth Context for Mobile App - Same as Web App
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { isAuthenticated, logout as authLogout, getCurrentUser } from '../services/auth';
+// Auth Context for Mobile App - Enhanced with token refresh
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { isAuthenticated, logout as authLogout, getCurrentUser, refreshToken } from '../services/auth';
 import { getAuthToken } from '../config/api';
 
 const AuthContext = createContext(null);
@@ -17,10 +17,24 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isAuth, setIsAuth] = useState(false);
+  const refreshIntervalRef = useRef(null);
 
   useEffect(() => {
     checkAuth();
-  }, []);
+    
+    // Set up token refresh interval (refresh every 50 minutes)
+    refreshIntervalRef.current = setInterval(() => {
+      if (isAuth) {
+        refreshTokenSilently();
+      }
+    }, 50 * 60 * 1000); // 50 minutes
+
+    return () => {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
+    };
+  }, [isAuth]);
 
   const checkAuth = async () => {
     try {
@@ -72,7 +86,20 @@ export const AuthProvider = ({ children }) => {
     setIsAuth(true);
   };
 
+  const refreshTokenSilently = async () => {
+    try {
+      await refreshToken();
+      console.log('✅ Token refreshed silently');
+    } catch (error) {
+      console.log('Token refresh failed, logging out:', error);
+      await handleLogout();
+    }
+  };
+
   const handleLogout = async () => {
+    if (refreshIntervalRef.current) {
+      clearInterval(refreshIntervalRef.current);
+    }
     await authLogout();
     setUser(null);
     setIsAuth(false);

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Cashbook",
     "slug": "cashbook",
-    "version": "1.0.0",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -16,7 +16,8 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.cashbook.app"
+      "bundleIdentifier": "com.rajeswari.cashbook",
+      "buildNumber": "3"
     },
     "android": {
       "adaptiveIcon": {
@@ -24,7 +25,7 @@
         "backgroundColor": "#3B82F6"
       },
       "package": "com.cashbook.app",
-      "versionCode": 1,
+      "versionCode": 3,
       "permissions": []
     },
     "web": {
