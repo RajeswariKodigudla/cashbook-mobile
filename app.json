@@ -24,7 +24,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#3B82F6"
       },
-      "package": "com.cashbook.app",
+      "package": "com.rajeswari.cashbook",
       "versionCode": 3,
       "permissions": []
     },
