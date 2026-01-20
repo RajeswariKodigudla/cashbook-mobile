@@ -3,15 +3,41 @@ import { authAPI } from './api';
 import { setAuthToken, removeAuthToken, getAuthToken } from '../config/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// Lazy load cache helpers to avoid circular dependencies
+let cacheHelpersPromise = null;
+const getCacheHelpers = async () => {
+  if (!cacheHelpersPromise) {
+    cacheHelpersPromise = import('./cacheService').then(module => module.cacheHelpers);
+  }
+  return cacheHelpersPromise;
+};
+
+// Background fetch for user (non-blocking)
+const fetchUserInBackground = async () => {
+  try {
+    const userResponse = await authAPI.getCurrentUser();
+    const user = userResponse.user || userResponse;
+    if (user && (user.username || user.email || user.id)) {
+      const cacheHelpers = await getCacheHelpers();
+      await cacheHelpers.cacheUser(user);
+    }
+  } catch (error) {
+    // Silent fail - cache will be used
+    console.log('Background user fetch failed (non-critical):', error.message);
+  }
+};
+
 // Get current user info with caching
 export const getCurrentUser = async () => {
   try {
     // Try cache first
-    const { cacheHelpers } = await import('./cacheService');
+    const cacheHelpers = await getCacheHelpers();
     const cachedUser = await cacheHelpers.getCachedUser();
     if (cachedUser && cachedUser.username && cachedUser.username !== 'User') {
       // Return cached user immediately, fetch fresh in background
-      fetchUserInBackground();
+      fetchUserInBackground().catch(() => {
+        // Silent fail - already handled in function
+      });
       return { user: cachedUser };
     }
 
@@ -22,7 +48,7 @@ export const getCurrentUser = async () => {
     // Ensure we have a proper user object
     if (user && (user.username || user.email || user.id)) {
       // Cache user info
-      const { cacheHelpers } = await import('./cacheService');
+      const cacheHelpers = await getCacheHelpers();
       await cacheHelpers.cacheUser(user);
       return { user };
     }
@@ -32,7 +58,7 @@ export const getCurrentUser = async () => {
   } catch (error) {
     if (error.response?.status === 404) {
       console.log('User endpoint not available, trying cache');
-      const { cacheHelpers } = await import('./cacheService');
+      const cacheHelpers = await getCacheHelpers();
       const cachedUser = await cacheHelpers.getCachedUser();
       if (cachedUser) {
         return { user: cachedUser };
@@ -42,29 +68,18 @@ export const getCurrentUser = async () => {
     console.error('Error getting current user:', error);
     // Try cache on error
     try {
-      const { cacheHelpers } = await import('./cacheService');
+      const cacheHelpers = await getCacheHelpers();
       const cachedUser = await cacheHelpers.getCachedUser();
       if (cachedUser) {
         return { user: cachedUser };
       }
     } catch (cacheError) {
       // Ignore cache errors
+      console.log('Cache error (non-critical):', cacheError.message);
     }
-    throw error;
-  }
-};
-
-// Background fetch for user (non-blocking)
-const fetchUserInBackground = async () => {
-  try {
-    const userResponse = await authAPI.getCurrentUser();
-    const user = userResponse.user || userResponse;
-    if (user && (user.username || user.email || user.id)) {
-      const { cacheHelpers } = await import('./cacheService');
-      await cacheHelpers.cacheUser(user);
-    }
-  } catch (error) {
-    // Silent fail - cache will be used
+    // Don't throw - return fallback user instead to prevent app crash
+    console.warn('getCurrentUser failed, using fallback user');
+    return { user: { username: 'User' } };
   }
 };
 
@@ -78,7 +93,7 @@ export const refreshToken = async () => {
 
     const response = await authAPI.refreshToken(refreshTokenValue);
     
-    if (response.access) {
+    if (response && response.access) {
       await setAuthToken(response.access);
       if (response.refresh) {
         await AsyncStorage.setItem('refreshToken', response.refresh);
@@ -89,7 +104,13 @@ export const refreshToken = async () => {
     throw new Error('Invalid refresh response');
   } catch (error) {
     console.error('Token refresh failed:', error);
-    logout();
+    // Logout on refresh failure to clear invalid tokens
+    try {
+      await logout();
+    } catch (logoutError) {
+      // Ignore logout errors during token refresh failure
+      console.log('Logout during token refresh failed (non-critical):', logoutError.message);
+    }
     throw error;
   }
 };
@@ -121,9 +142,20 @@ export const login = async (username, password) => {
         const userResponse = await authAPI.getCurrentUser();
         if (userResponse && userResponse.user) {
           user = userResponse.user;
+          // Cache user info for faster future access
+          const cacheHelpers = await getCacheHelpers();
+          await cacheHelpers.cacheUser(user);
         }
       } catch (err) {
         console.log('getCurrentUser failed (this is OK):', err);
+        // Still cache basic user info
+        try {
+          const cacheHelpers = await getCacheHelpers();
+          await cacheHelpers.cacheUser(user);
+        } catch (cacheErr) {
+          // Ignore cache errors
+          console.log('Cache error during login (non-critical):', cacheErr.message);
+        }
       }
       
       console.log('✅ Login successful');
@@ -279,16 +311,33 @@ export const logout = async () => {
         await authAPI.logout(refreshToken);
       } catch (error) {
         // Log but don't fail - client-side cleanup will still happen
-        console.log('Server logout failed (non-critical):', error);
+        console.log('Server logout failed (non-critical):', error.message);
       }
     }
   } catch (error) {
-    console.log('Logout error (non-critical):', error);
+    console.log('Logout error (non-critical):', error.message);
   } finally {
     // Always perform client-side cleanup
-    await removeAuthToken();
-    await AsyncStorage.removeItem('refreshToken');
-    await AsyncStorage.removeItem('current_account');
+    try {
+      await removeAuthToken();
+      await AsyncStorage.removeItem('refreshToken');
+      await AsyncStorage.removeItem('current_account');
+      
+      // Clear cached user data
+      try {
+        const cacheHelpers = await getCacheHelpers();
+        await cacheHelpers.cacheUser(null);
+        // Also clear from cache service directly
+        const { cacheService } = await import('./cacheService');
+        await cacheService.remove('current_user');
+      } catch (cacheError) {
+        // Ignore cache errors during logout
+        console.log('Cache clear error during logout (non-critical):', cacheError.message);
+      }
+    } catch (cleanupError) {
+      console.error('Error during logout cleanup:', cleanupError);
+      // Don't throw - logout should always complete
+    }
   }
 };
 

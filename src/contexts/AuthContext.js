@@ -16,7 +16,13 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    checkAuth();
+    // Wrap in try-catch to prevent app crash
+    checkAuth().catch((error) => {
+      console.error('❌ Auth check failed:', error);
+      setUser(null);
+      setIsAuth(false);
+      setLoading(false);
+    });
   }, []);
 
   const checkAuth = async () => {

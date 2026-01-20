@@ -1,8 +1,8 @@
 {
   "expo": {
     "name": "Byjan Cashbook",
-    "slug": "byjan-cashbook",
-    "version": "1.0.3",
+    "slug": "cashbook",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -25,7 +25,7 @@
         "backgroundColor": "#3B82F6"
       },
       "package": "com.rajeswari.cashbook",
-      "versionCode": 3,
+      "versionCode": 4,
       "permissions": []
     },
     "web": {
