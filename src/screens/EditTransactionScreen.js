@@ -8,10 +8,16 @@ import {
   Alert,
   ScrollView,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { getTransactionById, updateTransaction, deleteTransaction } from '../utils/apiTransactions';
+import { useAuth } from '../contexts/AuthContext';
+import { useAccount } from '../contexts/AccountContext';
+import { validateTransactionActionOrThrow } from '../utils/transactionValidation';
 
 export default function EditTransactionScreen({ route, navigation }) {
+  const { user } = useAuth();
+  const { currentAccount, currentUserMembership } = useAccount();
   const { id } = route?.params || {};
   const [txn, setTxn] = useState(null);
   const [amount, setAmount] = useState('');
@@ -121,9 +127,24 @@ export default function EditTransactionScreen({ route, navigation }) {
         type: normalizedType, // Always include type field
       };
 
+      // Validate user permissions before updating (only for shared accounts)
+      const accountId = txn?.accountId || currentAccount?.id;
+      if (user && accountId && accountId !== 'personal' && accountId !== null) {
+        try {
+          validateTransactionActionOrThrow(user, 'edit', txn, accountId, currentUserMembership);
+        } catch (validationError) {
+          if (validationError && validationError.validationError) {
+            Alert.alert('Permission Denied', validationError.message, [{ text: 'OK' }]);
+            setSaving(false);
+            return;
+          }
+          throw validationError;
+        }
+      }
+
       console.log('📤 Prepared transaction data for update:', transactionData);
 
-      await updateTransaction(id, transactionData);
+      await updateTransaction(id, transactionData, user, txn);
       console.log('✅ Transaction updated successfully');
       Alert.alert('Success', 'Transaction updated!', [
         { 
@@ -155,8 +176,23 @@ export default function EditTransactionScreen({ route, navigation }) {
             setSaving(true);
             
             try {
+              // Validate user permissions before deleting (only for shared accounts)
+              const accountId = txn?.accountId || currentAccount?.id;
+              if (user && accountId && accountId !== 'personal' && accountId !== null) {
+                try {
+                  validateTransactionActionOrThrow(user, 'delete', txn, accountId, currentUserMembership);
+                } catch (validationError) {
+                  if (validationError && validationError.validationError) {
+                    Alert.alert('Permission Denied', validationError.message, [{ text: 'OK' }]);
+                    setSaving(false);
+                    return;
+                  }
+                  throw validationError;
+                }
+              }
+
               // Try to delete - but don't wait too long
-              const deletePromise = deleteTransaction(id);
+              const deletePromise = deleteTransaction(id, user, txn);
               const timeoutPromise = new Promise((_, reject) => {
                 setTimeout(() => reject(new Error('Request timeout')), 3000);
               });
@@ -325,9 +361,9 @@ export default function EditTransactionScreen({ route, navigation }) {
       {/* ACTIONS */}
       <View style={styles.actions}>
         <TouchableOpacity
-          style={[styles.button, styles.deleteButton]}
-          onPress={handleDelete}
-          disabled={saving}
+          style={[styles.button, styles.deleteButton, saving && { pointerEvents: 'none' }]}
+          onPress={saving ? undefined : handleDelete}
+          {...(Platform.OS === 'web' ? {} : { disabled: saving })}
         >
           {saving ? (
             <ActivityIndicator color="#fff" />
@@ -337,9 +373,9 @@ export default function EditTransactionScreen({ route, navigation }) {
         </TouchableOpacity>
         <View style={{ width: 12 }} />
         <TouchableOpacity
-          style={[styles.button, styles.saveButton]}
-          onPress={handleSave}
-          disabled={saving}
+          style={[styles.button, styles.saveButton, saving && { pointerEvents: 'none' }]}
+          onPress={saving ? undefined : handleSave}
+          {...(Platform.OS === 'web' ? {} : { disabled: saving })}
         >
           {saving ? (
             <ActivityIndicator color="#fff" />

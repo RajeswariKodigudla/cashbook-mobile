@@ -22,14 +22,19 @@ export const Input: React.FC<InputProps> = ({
   style,
   ...props
 }) => {
+  // Ensure we always return boolean values, not strings or other falsy values
+  const hasError = Boolean(error && typeof error === 'string' && error.trim().length > 0);
+  const hasHelperText = Boolean(helperText && typeof helperText === 'string' && helperText.trim().length > 0);
+  const hasLabel = Boolean(label && typeof label === 'string' && label.trim().length > 0);
+
   return (
     <View style={styles.container}>
-      {label && <Text style={styles.label}>{label}</Text>}
+      {hasLabel ? <Text style={styles.label}>{label}</Text> : null}
       <View style={styles.inputWrapper}>
         <TextInput
           style={[
             styles.input,
-            error && styles.inputError,
+            hasError && styles.inputError,
             isWeb && styles.webInput,
             rightIcon && styles.inputWithIcon,
             style,
@@ -37,10 +42,10 @@ export const Input: React.FC<InputProps> = ({
           placeholderTextColor={COLORS.textTertiary}
           {...props}
         />
-        {rightIcon && <View style={styles.rightIconContainer}>{rightIcon}</View>}
+        {rightIcon ? <View style={styles.rightIconContainer}>{rightIcon}</View> : null}
       </View>
-      {error && <Text style={styles.errorText}>{error}</Text>}
-      {helperText && !error && <Text style={styles.helperText}>{helperText}</Text>}
+      {hasError ? <Text style={styles.errorText}>{error}</Text> : null}
+      {hasHelperText && !hasError ? <Text style={styles.helperText}>{helperText}</Text> : null}
     </View>
   );
 };

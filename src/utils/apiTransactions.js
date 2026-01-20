@@ -1,5 +1,6 @@
 // API-based transactions utility - Same as Web App
 import { transactionsAPI } from '../services/api';
+import { validateTransactionActionOrThrow } from './transactionValidation';
 
 let transactionsCache = null;
 
@@ -53,8 +54,13 @@ export async function getTransactionById(id) {
   }
 }
 
-export async function createTransaction(transactionData) {
+export async function createTransaction(transactionData, user = null, accountId = null) {
   try {
+    // Validate user permissions before creating transaction (only for shared accounts)
+    if (user && accountId && accountId !== 'personal' && accountId !== null) {
+      validateTransactionActionOrThrow(user, 'add', null, accountId);
+    }
+    
     const newTransaction = await transactionsAPI.create(transactionData);
     transactionsCache = null;
     return newTransaction;
@@ -64,8 +70,22 @@ export async function createTransaction(transactionData) {
   }
 }
 
-export async function updateTransaction(id, transactionData) {
+export async function updateTransaction(id, transactionData, user = null, existingTransaction = null) {
   try {
+    // Validate user permissions before updating transaction (only for shared accounts)
+    if (user && existingTransaction) {
+      const accountId = existingTransaction.accountId || null;
+      if (accountId && accountId !== 'personal' && accountId !== null) {
+        // If existing transaction not provided, fetch it to check ownership
+        if (!existingTransaction) {
+          const transaction = await getTransactionById(id);
+          validateTransactionActionOrThrow(user, 'edit', transaction, accountId);
+        } else {
+          validateTransactionActionOrThrow(user, 'edit', existingTransaction, accountId);
+        }
+      }
+    }
+    
     const updated = await transactionsAPI.update(id, transactionData);
     transactionsCache = null;
     return updated;
@@ -75,8 +95,24 @@ export async function updateTransaction(id, transactionData) {
   }
 }
 
-export async function deleteTransaction(id) {
+export async function deleteTransaction(id, user = null, existingTransaction = null) {
   try {
+    // Validate user permissions before deleting transaction (only for shared accounts)
+    if (user && existingTransaction) {
+      const accountId = existingTransaction.accountId || null;
+      if (accountId && accountId !== 'personal' && accountId !== null) {
+        // If existing transaction not provided, fetch it to check ownership
+        if (!existingTransaction) {
+          const transaction = await getTransactionById(id);
+          if (transaction) {
+            validateTransactionActionOrThrow(user, 'delete', transaction, accountId);
+          }
+        } else {
+          validateTransactionActionOrThrow(user, 'delete', existingTransaction, accountId);
+        }
+      }
+    }
+    
     const result = await transactionsAPI.delete(id);
     transactionsCache = null;
     // If it's a network error but marked as potentially successful, don't throw
@@ -86,7 +122,12 @@ export async function deleteTransaction(id) {
     }
     return result;
   } catch (error) {
-    // SILENTLY handle all errors - don't log as error, don't throw
+    // If it's a validation error, throw it
+    if (error.validationError) {
+      throw error;
+    }
+    
+    // SILENTLY handle all other errors - don't log as error, don't throw
     // The request may have reached the server even if response didn't come back
     // Return success indicator so UI can navigate back and refresh data
     transactionsCache = null;

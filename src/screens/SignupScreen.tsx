@@ -17,6 +17,7 @@ import { Input } from '../components/Input';
 import { Button } from '../components/Button';
 import { Container } from '../components/Container';
 import { Card } from '../components/Card';
+import { Loader } from '../components/Loader';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants';
 import { Ionicons } from '@expo/vector-icons';
 import { isWeb, getResponsiveValue } from '../utils/responsive';
@@ -39,6 +40,7 @@ const SignupScreen: React.FC<SignupScreenProps> = ({ navigation }) => {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -88,43 +90,82 @@ const SignupScreen: React.FC<SignupScreenProps> = ({ navigation }) => {
       );
 
       if (result.success) {
-        Alert.alert(
-          'Success',
-          'Account created successfully! Please login to continue.',
-          [
-            {
-              text: 'OK',
-              onPress: () => navigation.navigate('Login'),
-            },
-          ]
-        );
+        // Stop loading immediately
+        setLoading(false);
+        
+        // Show success state briefly
+        setSuccess(true);
+        
+        // Navigate to login after a short delay
+        setTimeout(() => {
+          setSuccess(false);
+          // Navigate to login and pre-fill username
+          navigation.navigate('Login', { 
+            username: result.username || formData.username 
+          });
+        }, 1500);
       } else {
-        Alert.alert('Registration Failed', result.message || 'Please try again');
+        // Handle registration failure with detailed error messages
+        const errorMessage = result.message || 'Registration failed. Please try again.';
+        
+        // Check if there are field-specific errors
+        if (result.errors) {
+          setErrors(result.errors);
+          Alert.alert(
+            'Registration Failed',
+            errorMessage,
+            [{ text: 'OK' }]
+          );
+        } else {
+          setErrors({ general: errorMessage });
+          Alert.alert(
+            'Registration Failed',
+            errorMessage,
+            [{ text: 'OK' }]
+          );
+        }
       }
     } catch (error: any) {
       console.error('Signup error:', error);
       
-      // Handle validation errors from backend
-      if (error.response?.data?.errors) {
-        const backendErrors = error.response.data.errors;
-        const errorMessages: Record<string, string> = {};
-        
-        Object.keys(backendErrors).forEach((key) => {
-          if (Array.isArray(backendErrors[key])) {
-            errorMessages[key] = backendErrors[key][0];
-          } else {
-            errorMessages[key] = backendErrors[key];
-          }
-        });
-        
-        setErrors(errorMessages);
-        Alert.alert('Validation Error', 'Please check the form and try again');
-      } else {
-        Alert.alert(
-          'Registration Failed',
-          error.message || 'An error occurred. Please try again.'
-        );
+      // Enhanced error handling with field-specific errors
+      let errorMessages: Record<string, string> = {};
+      let alertMessage = 'An error occurred. Please try again.';
+      
+      if (error.response?.data) {
+        // Handle validation errors from backend
+        if (error.response.data.errors) {
+          const backendErrors = error.response.data.errors;
+          
+          Object.keys(backendErrors).forEach((key) => {
+            if (Array.isArray(backendErrors[key])) {
+              errorMessages[key] = backendErrors[key][0];
+            } else if (typeof backendErrors[key] === 'string') {
+              errorMessages[key] = backendErrors[key];
+            } else {
+              errorMessages[key] = String(backendErrors[key]);
+            }
+          });
+          
+          // Set field-specific errors
+          setErrors(errorMessages);
+          
+          // Create alert message from first error
+          const firstErrorKey = Object.keys(errorMessages)[0];
+          alertMessage = errorMessages[firstErrorKey] || 'Please check the form and try again.';
+        } else if (error.response.data.message) {
+          alertMessage = error.response.data.message;
+          setErrors({ general: alertMessage });
+        } else if (error.response.data.detail) {
+          alertMessage = error.response.data.detail;
+          setErrors({ general: alertMessage });
+        }
+      } else if (error.message) {
+        alertMessage = error.message;
+        setErrors({ general: alertMessage });
       }
+      
+      Alert.alert('Registration Failed', alertMessage, [{ text: 'OK' }]);
     } finally {
       setLoading(false);
     }
@@ -187,6 +228,21 @@ const SignupScreen: React.FC<SignupScreenProps> = ({ navigation }) => {
                 </View>
               </View>
 
+              {/* Success Overlay */}
+              {success && (
+                <View style={styles.successOverlay}>
+                  <View style={styles.successCard}>
+                    <View style={styles.successIconContainer}>
+                      <Ionicons name="checkmark-circle" size={64} color={COLORS.success} />
+                    </View>
+                    <Text style={styles.successTitle}>Account Created!</Text>
+                    <Text style={styles.successMessage}>
+                      Welcome, {formData.username}!{'\n'}Redirecting to login...
+                    </Text>
+                  </View>
+                </View>
+              )}
+
               {/* Form Card */}
               <Card style={styles.formCard} elevated padding="xl">
                 <View style={styles.formSection}>
@@ -222,13 +278,16 @@ const SignupScreen: React.FC<SignupScreenProps> = ({ navigation }) => {
                       label="Username"
                       placeholder="Choose a username"
                       value={formData.username}
-                      onChangeText={(text) => updateField('username', text)}
+                      onChangeText={(text) => updateField('username', text.toLowerCase().trim())}
                       autoCapitalize="none"
                       autoCorrect={false}
                       editable={!loading}
                       error={errors.username}
                       autoFocus={isWeb}
                     />
+                    {errors.username && (
+                      <Text style={styles.fieldErrorText}>{errors.username}</Text>
+                    )}
                   </View>
 
                   {/* Email */}
@@ -350,10 +409,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
-    // @ts-ignore - web only
-    background: isWeb
-      ? `linear-gradient(135deg, ${COLORS.background} 0%, ${COLORS.surface} 100%)`
-      : COLORS.background,
+    ...(isWeb && {
+      // @ts-ignore - web only
+      backgroundImage: `linear-gradient(135deg, ${COLORS.background} 0%, ${COLORS.surface} 100%)`,
+    }),
   },
   containerInner: {
     minHeight: '100%',
@@ -510,6 +569,54 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.captionBold,
     color: COLORS.primary,
     fontSize: 14,
+  },
+  // Success Overlay
+  successOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+    padding: SPACING.xl,
+  },
+  successCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.xxl,
+    alignItems: 'center',
+    maxWidth: 400,
+    width: '100%',
+    ...SHADOWS.lg,
+  },
+  successIconContainer: {
+    marginBottom: SPACING.lg,
+  },
+  successTitle: {
+    ...TYPOGRAPHY.h2,
+    fontSize: getResponsiveValue(24, 28, 32),
+    color: COLORS.text,
+    marginBottom: SPACING.md,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  successMessage: {
+    ...TYPOGRAPHY.body,
+    fontSize: getResponsiveValue(15, 16, 17),
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginBottom: SPACING.xl,
+    lineHeight: 24,
+  },
+  fieldErrorText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.error,
+    fontSize: 12,
+    marginTop: SPACING.xs / 2,
+    marginLeft: SPACING.xs,
   },
 });
 

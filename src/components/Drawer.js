@@ -9,10 +9,12 @@ import {
   Alert,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { removeAuthToken } from '../config/api';
+import { useAuth } from '../contexts/AuthContext';
 import { drawerMenu } from '../data/drawerMenu';
 
 export default function Drawer({ show, onClose, navigation, user, onAddAccount }) {
+  const { logout: authLogout } = useAuth();
+
   const handleClick = (item) => {
     if (item.label === 'Add Account') {
       // Handle add account
@@ -53,7 +55,7 @@ export default function Drawer({ show, onClose, navigation, user, onAddAccount }
     onClose();
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     Alert.alert(
       'Logout',
       'Are you sure you want to logout?',
@@ -63,12 +65,27 @@ export default function Drawer({ show, onClose, navigation, user, onAddAccount }
           text: 'Logout',
           style: 'destructive',
           onPress: async () => {
-            await removeAuthToken();
-            navigation?.reset({
-              index: 0,
-              routes: [{ name: 'Login' }],
-            });
-            onClose();
+            try {
+              // Close drawer first
+              onClose();
+              
+              // Use AuthContext logout which handles all cleanup
+              await authLogout();
+              
+              // Navigate to login screen
+              navigation?.reset({
+                index: 0,
+                routes: [{ name: 'Login' }],
+              });
+            } catch (error) {
+              console.error('Logout error:', error);
+              // Even if logout fails, ensure navigation happens
+              onClose();
+              navigation?.reset({
+                index: 0,
+                routes: [{ name: 'Login' }],
+              });
+            }
           },
         },
       ]

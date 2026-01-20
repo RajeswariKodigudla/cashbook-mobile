@@ -44,7 +44,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   webContainer: {
-    // @ts-ignore - web only
-    margin: '0 auto',
+    // Web-specific styles handled via inline styles with alignSelf
   },
 });

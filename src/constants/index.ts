@@ -2,14 +2,23 @@
  * Mobile App Constants - Professional & Minimal Design
  */
 
-export const API_BASE_URL = 'https://cashbook-backend-2.onrender.com/api';
+// Import API_BASE_URL from config to ensure consistency
+// This ensures all services use the same base URL (localhost in dev, Render in prod)
+import { API_BASE_URL } from '../config/api';
+import { Platform } from 'react-native';
+export { API_BASE_URL };
 
-// Professional Color Palette - Minimal & Modern
+// Byjan Cashbook Color Palette - Professional & Modern
 export const COLORS = {
-  // Primary - Professional Blue
+  // Primary - Byjan Brand Blue
   primary: '#2563EB',
   primaryLight: '#3B82F6',
   primaryDark: '#1E40AF',
+  
+  // Byjan Brand Colors
+  byjan: '#2563EB',
+  byjanLight: '#60A5FA',
+  byjanDark: '#1E3A8A',
   
   // Neutral Grays
   background: '#F8FAFC',
@@ -121,27 +130,28 @@ export const RADIUS = {
   full: 9999,
 };
 
-// Shadows
+// Shadows - Platform-aware
+const createShadow = (height: number, opacity: number, radius: number) => {
+  // For web, use only boxShadow (React Native Web prefers this)
+  if (Platform.OS === 'web') {
+    return {
+      // @ts-ignore - web only
+      boxShadow: `0 ${height}px ${radius}px rgba(0, 0, 0, ${opacity})`,
+    };
+  }
+
+  // For native platforms, use shadow props
+  return {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height },
+    shadowOpacity: opacity,
+    shadowRadius: radius,
+    elevation: height * 2,
+  };
+};
+
 export const SHADOWS = {
-  sm: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  md: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  lg: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 8,
-  },
+  sm: createShadow(1, 0.05, 2),
+  md: createShadow(2, 0.1, 4),
+  lg: createShadow(4, 0.15, 8),
 };

@@ -11,8 +11,10 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import AddAccountModal from './AddAccountModal';
 import { getCurrentAccount, getAccounts, setCurrentAccount, deleteAccount } from '../utils/accounts';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Header({ navigation, onOpenDrawer, onSearch, onExport, onCalendar, onMoreMenu }) {
+  const { logout: authLogout } = useAuth();
   const [currentAccount, setCurrentAccountState] = useState('Cashbook');
   const [showAccountSheet, setShowAccountSheet] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -102,6 +104,45 @@ export default function Header({ navigation, onOpenDrawer, onSearch, onExport, o
     setCurrentAccountState(accountName);
     await loadCurrentAccount();
     await loadAccounts();
+  };
+
+  const handleLogout = async () => {
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Close any open modals
+              setShowMoreMenu(false);
+              setShowAccountSheet(false);
+              
+              // Use AuthContext logout which handles all cleanup
+              await authLogout();
+              
+              // Navigate to login screen
+              navigation?.reset({
+                index: 0,
+                routes: [{ name: 'Login' }],
+              });
+            } catch (error) {
+              console.error('Logout error:', error);
+              // Even if logout fails, ensure navigation happens
+              setShowMoreMenu(false);
+              setShowAccountSheet(false);
+              navigation?.reset({
+                index: 0,
+                routes: [{ name: 'Login' }],
+              });
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -260,6 +301,15 @@ export default function Header({ navigation, onOpenDrawer, onSearch, onExport, o
               <View style={{ width: 12 }} />
               <Text style={styles.menuItemText}>Backup & Restore</Text>
             </TouchableOpacity>
+            <View style={styles.menuDivider} />
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={handleLogout}
+            >
+              <MaterialIcons name="logout" size={20} color="#d32f2f" />
+              <View style={{ width: 12 }} />
+              <Text style={[styles.menuItemText, styles.logoutText]}>Logout</Text>
+            </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -390,5 +440,14 @@ const styles = StyleSheet.create({
   menuItemText: {
     fontSize: 16,
     color: '#000',
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: '#eee',
+    marginVertical: 4,
+  },
+  logoutText: {
+    color: '#d32f2f',
+    fontWeight: '500',
   },
 });

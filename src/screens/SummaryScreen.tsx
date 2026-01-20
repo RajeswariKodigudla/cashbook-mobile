@@ -14,11 +14,14 @@ import {
 import { SafeAreaViewWrapper } from '../components/SafeAreaWrapper';
 import { Card } from '../components/Card';
 import { Ionicons } from '@expo/vector-icons';
-import { transactionService } from '../services/apiService';
+import { getTransactions } from '../utils/apiTransactions';
 import { Transaction } from '../types';
-import { COLORS, DATE_FILTER_OPTIONS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants';
+import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants';
 import { formatCurrency } from '../utils/formatUtils';
 import { isInDateRange } from '../utils/dateUtils';
+import { useAccount } from '../contexts/AccountContext';
+import { transactionsAPI } from '../services/api';
+import { cacheHelpers } from '../services/cacheService';
 
 const FILTERS = [
   { label: 'All', value: 'ALL' },
@@ -29,21 +32,74 @@ const FILTERS = [
 ];
 
 const ModernSummaryScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+  const { currentAccount } = useAccount();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [activeFilter, setActiveFilter] = useState<typeof FILTERS[number]['value']>('MONTH');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadTransactions();
-  }, []);
+  }, [currentAccount?.id]);
 
   const loadTransactions = async () => {
     try {
-      const data = await transactionService.getTransactions();
-      setTransactions(data || []);
+      setLoading(true);
+      
+      // Build account filter based on current account
+      const accountId = currentAccount?.id === 'personal' || !currentAccount?.id ? 'personal' : currentAccount.id;
+      const accountFilter = accountId === 'personal'
+        ? { account: 'personal' }
+        : { accountId: accountId };
+      
+      console.log('🔍 SummaryScreen: Loading transactions with account filter:', accountFilter);
+      
+      // Try cache first for instant loading
+      const cachedTransactions = await cacheHelpers.getCachedTransactions(accountId);
+      if (cachedTransactions && cachedTransactions.length >= 0) {
+        console.log('⚡ SummaryScreen: Using cached transactions:', cachedTransactions.length);
+        setTransactions(cachedTransactions as Transaction[]);
+        setLoading(false);
+      }
+      
+      // Fetch fresh data
+      const data = await transactionsAPI.getAll(accountFilter);
+      let transactionsArray: Transaction[] = [];
+      
+      // Handle response format
+      if (Array.isArray(data)) {
+        transactionsArray = data;
+      } else if (data?.data && Array.isArray(data.data)) {
+        transactionsArray = data.data;
+      } else if (data?.results && Array.isArray(data.results)) {
+        transactionsArray = data.results;
+      }
+      
+      // CRITICAL: Client-side filtering as safety check
+      if (currentAccount) {
+        transactionsArray = transactionsArray.filter(tx => {
+          const txAccountId = tx.accountId || tx.account?.id || tx.account_id;
+          
+          if (currentAccount.id === 'personal' || !currentAccount.id) {
+            return !txAccountId || txAccountId === 'personal' || txAccountId === null;
+          } else {
+            return txAccountId === currentAccount.id || txAccountId === parseInt(currentAccount.id);
+          }
+        });
+      }
+      
+      setTransactions(transactionsArray as Transaction[]);
+      // Cache transactions
+      await cacheHelpers.cacheTransactions(accountId, transactionsArray);
     } catch (error) {
       console.error('Error loading transactions:', error);
-      setTransactions([]);
+      // Try cache on error
+      const accountId = currentAccount?.id === 'personal' || !currentAccount?.id ? 'personal' : currentAccount.id;
+      const cachedTransactions = await cacheHelpers.getCachedTransactions(accountId);
+      if (cachedTransactions) {
+        setTransactions(cachedTransactions as Transaction[]);
+      } else {
+        setTransactions([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -51,17 +107,28 @@ const ModernSummaryScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
   const filteredTransactions = useMemo(() => {
     if (activeFilter === 'ALL') return transactions;
-    return transactions.filter(tx => isInDateRange(tx.timestamp, activeFilter));
+    return transactions.filter(tx => {
+      const timestamp = tx.timestamp || (tx.date ? new Date(tx.date).getTime() : Date.now());
+      return isInDateRange(timestamp, activeFilter);
+    });
   }, [transactions, activeFilter]);
 
   const summary = useMemo(() => {
     const income = filteredTransactions
-      .filter(tx => tx.type === 'INCOME')
-      .reduce((sum, tx) => sum + (tx.amount || 0), 0);
+      .filter(tx => {
+        const type = String(tx.type || tx.transaction_type || '').toLowerCase().trim();
+        return type === 'income' || type === 'in' || type === 'credit' || type === 'i' || type === 'inc' || 
+               (tx.amount && tx.amount > 0 && !tx.is_expense && type !== 'expense' && type !== 'ex');
+      })
+      .reduce((sum, tx) => sum + Math.abs(tx.amount || 0), 0);
     
     const expenses = filteredTransactions
-      .filter(tx => tx.type === 'EXPENSE')
-      .reduce((sum, tx) => sum + (tx.amount || 0), 0);
+      .filter(tx => {
+        const type = String(tx.type || tx.transaction_type || '').toLowerCase().trim();
+        return type === 'expense' || type === 'ex' || type === 'out' || type === 'debit' || type === 'exp' || type === 'e' ||
+               (tx.amount && (tx.amount < 0 || tx.is_expense));
+      })
+      .reduce((sum, tx) => sum + Math.abs(tx.amount || 0), 0);
     
     const balance = income - expenses;
     const savingsRate = income > 0 ? ((balance / income) * 100).toFixed(1) : '0';
@@ -72,8 +139,16 @@ const ModernSummaryScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       balance,
       savingsRate,
       transactionCount: filteredTransactions.length,
-      incomeCount: filteredTransactions.filter(tx => tx.type === 'INCOME').length,
-      expenseCount: filteredTransactions.filter(tx => tx.type === 'EXPENSE').length,
+      incomeCount: filteredTransactions.filter(tx => {
+        const type = String(tx.type || tx.transaction_type || '').toLowerCase().trim();
+        return type === 'income' || type === 'in' || type === 'credit' || type === 'i' || type === 'inc' || 
+               (tx.amount && tx.amount > 0 && !tx.is_expense && type !== 'expense' && type !== 'ex');
+      }).length,
+      expenseCount: filteredTransactions.filter(tx => {
+        const type = String(tx.type || tx.transaction_type || '').toLowerCase().trim();
+        return type === 'expense' || type === 'ex' || type === 'out' || type === 'debit' || type === 'exp' || type === 'e' ||
+               (tx.amount && (tx.amount < 0 || tx.is_expense));
+      }).length,
     };
   }, [filteredTransactions]);
 
@@ -238,7 +313,7 @@ const ModernSummaryScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             {summary.balance >= 0 ? (
               <View style={styles.insightItem}>
                 <View style={styles.insightIcon}>
-                  <Ionicons name="happy" size={20} color={COLORS.success} />
+                  <Ionicons name="happy-outline" size={20} color={COLORS.success} />
                 </View>
                 <View style={styles.insightContent}>
                   <Text style={styles.insightTitle}>Financial Health</Text>
@@ -462,3 +537,4 @@ const styles = StyleSheet.create({
 });
 
 export default ModernSummaryScreen;
+

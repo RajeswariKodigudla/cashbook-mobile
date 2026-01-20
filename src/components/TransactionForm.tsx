@@ -2,7 +2,7 @@
  * Transaction Form Modal Component
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,13 +15,15 @@ import {
 } from 'react-native';
 import { SafeAreaViewWrapper } from './SafeAreaWrapper';
 import { Ionicons } from '@expo/vector-icons';
-import { Transaction, TransactionType } from '../types';
+import { Transaction, TransactionType, PaymentMode } from '../types';
 import { CATEGORIES } from '../constants';
 import { Button } from './Button';
 import { Input } from './Input';
-import { Card } from './Card';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../constants';
 import { getCategoryIcon } from '../utils/iconUtils';
+import { useAuth } from '../contexts/AuthContext';
+import { useAccount } from '../contexts/AccountContext';
+import { validateTransactionActionOrThrow } from '../utils/transactionValidation';
 
 interface TransactionFormProps {
   visible: boolean;
@@ -38,10 +40,13 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
   editingTransaction,
   initialType = 'EXPENSE',
 }) => {
+  const { user } = useAuth();
+  const { currentAccount, currentUserMembership } = useAccount();
   const [type, setType] = useState<TransactionType>(editingTransaction?.type || initialType);
   const [amount, setAmount] = useState(editingTransaction?.amount.toString() || '');
   const [categoryId, setCategoryId] = useState(editingTransaction?.categoryId || '');
   const [note, setNote] = useState(editingTransaction?.note || '');
+  const [paymentMode, setPaymentMode] = useState<PaymentMode>(editingTransaction?.paymentMode || 'CASH');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -52,16 +57,28 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
         setAmount(editingTransaction.amount.toString());
         setCategoryId(editingTransaction.categoryId);
         setNote(editingTransaction.note || '');
+        setPaymentMode(editingTransaction.paymentMode || 'CASH');
       } else {
         setType(initialType);
         setAmount('');
         setCategoryId('');
         setNote('');
+        setPaymentMode('CASH');
       }
       setErrors({});
       setLoading(false);
     }
   }, [editingTransaction, initialType, visible]);
+
+  // Clear category if it doesn't match the current type
+  useEffect(() => {
+    if (categoryId) {
+      const category = CATEGORIES.find(cat => cat.id === categoryId);
+      if (category && category.type !== type) {
+        setCategoryId('');
+      }
+    }
+  }, [type, categoryId]);
 
   const handleSubmit = async () => {
     setErrors({});
@@ -92,14 +109,38 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
     setLoading(true);
     setErrors({});
     try {
-      console.log('📝 Form submitting transaction...');
+      // Validate user permissions before submitting (only for shared accounts)
+      if (user && currentAccount && currentAccount.id && currentAccount.id !== 'personal') {
+        try {
+          const action = editingTransaction ? 'edit' : 'add';
+          validateTransactionActionOrThrow(user, action, editingTransaction || undefined, currentAccount.id, currentUserMembership);
+        } catch (validationError: any) {
+          if (validationError.validationError) {
+            setErrors({ general: validationError.message });
+            setLoading(false);
+            return;
+          }
+          throw validationError;
+        }
+      }
+      
+      console.log('📝 Form submitting transaction...', {
+        type,
+        amount: amountValue,
+        categoryId,
+        paymentMode,
+        hasNote: !!note,
+      });
+      
       await onSubmit({
         type,
         amount: amountValue,
         categoryId,
         note: note.trim() || undefined,
         timestamp: editingTransaction?.timestamp || Date.now(),
+        paymentMode,
       });
+      
       console.log('✅ Form submission successful, closing form...');
       
       // Success - reset form state and close immediately
@@ -107,6 +148,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
       setCategoryId('');
       setNote('');
       setType(initialType);
+      setPaymentMode('CASH');
       setErrors({});
       setLoading(false);
       
@@ -121,8 +163,17 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
     }
   };
 
-  const filteredCategories = CATEGORIES.filter(cat => cat.type === type);
-
+  const filteredCategories = useMemo(() => {
+    // Direct comparison - categories have 'EXPENSE' or 'INCOME' as type
+    const filtered = CATEGORIES.filter(cat => cat.type === type);
+    console.log('📋 Filtered categories:', filtered.length, 'for type:', type);
+    console.log('📋 All categories:', CATEGORIES.length);
+    console.log('📋 Categories list:', filtered.map(c => `${c.label} (${c.type})`));
+    if (filtered.length === 0) {
+      console.warn('⚠️ No categories found! Type:', type, 'Available types:', [...new Set(CATEGORIES.map(c => c.type))]);
+    }
+    return filtered;
+  }, [type]);
 
   return (
     <Modal
@@ -143,10 +194,16 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
           <View style={styles.closeButton} />
         </View>
 
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView 
+          style={styles.content} 
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={true}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled={true}
+        >
           {/* Type Selection */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Type</Text>
+            <Text style={styles.sectionTitle}>Transaction Type</Text>
             <View style={styles.typeContainer}>
               <TouchableOpacity
                 style={[styles.typeButton, type === 'EXPENSE' && styles.typeButtonActive]}
@@ -197,7 +254,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
           <View style={styles.section}>
             <Input
               label="Amount"
-              placeholder="0.00"
+              placeholder="Enter amount"
               value={amount}
               onChangeText={setAmount}
               keyboardType="decimal-pad"
@@ -211,29 +268,92 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
             {errors.categoryId && (
               <Text style={styles.errorText}>{errors.categoryId}</Text>
             )}
-            <View style={styles.categoryGrid}>
-              {filteredCategories.map((category) => (
+            {filteredCategories.length === 0 ? (
+              <View style={styles.emptyCategoriesContainer}>
+                <Ionicons name="alert-circle-outline" size={24} color={COLORS.textTertiary} />
+                <Text style={styles.emptyCategoriesText}>
+                  No categories available for {type === 'INCOME' ? 'Income' : 'Expense'}
+                </Text>
+                <Text style={styles.emptyCategoriesText}>
+                  Total: {CATEGORIES.length}, Type: {type}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.categoryGridContainer}>
+                <View style={styles.categoryGrid}>
+                  {filteredCategories.map((category) => (
+                    <TouchableOpacity
+                      key={category.id}
+                      style={[
+                        styles.categoryButton,
+                        categoryId === category.id && styles.categoryButtonActive,
+                      ]}
+                      onPress={() => {
+                        console.log('📌 Category selected:', category.id, category.label);
+                        setCategoryId(category.id);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[
+                        styles.categoryIconContainer,
+                        categoryId === category.id && styles.categoryIconContainerActive,
+                      ]}>
+                        <Ionicons
+                          name={getCategoryIcon(category.icon) as any}
+                          size={36}
+                          color={categoryId === category.id ? COLORS.primary : COLORS.text}
+                        />
+                      </View>
+                      <Text
+                        style={[
+                          styles.categoryLabel,
+                          categoryId === category.id && styles.categoryLabelActive,
+                        ]}
+                        numberOfLines={2}
+                        adjustsFontSizeToFit={true}
+                        minimumFontScale={0.8}
+                      >
+                        {category.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+          </View>
+
+          {/* Payment Mode */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Payment Mode</Text>
+            <View style={styles.paymentModeContainer}>
+              {[
+                { value: 'CASH', label: 'Cash', icon: 'cash-outline' },
+                { value: 'CARD', label: 'Card', icon: 'card-outline' },
+                { value: 'UPI', label: 'UPI', icon: 'phone-portrait-outline' },
+                { value: 'BANK_TRANSFER', label: 'Bank', icon: 'business-outline' },
+                { value: 'ONLINE', label: 'Online', icon: 'globe-outline' },
+                { value: 'OTHER', label: 'Other', icon: 'ellipse-outline' },
+              ].map((mode) => (
                 <TouchableOpacity
-                  key={category.id}
+                  key={mode.value}
                   style={[
-                    styles.categoryButton,
-                    categoryId === category.id && styles.categoryButtonActive,
+                    styles.paymentModeButton,
+                    paymentMode === mode.value && styles.paymentModeButtonActive,
                   ]}
-                  onPress={() => setCategoryId(category.id)}
+                  onPress={() => setPaymentMode(mode.value as PaymentMode)}
                 >
                   <Ionicons
-                    name={getCategoryIcon(category.icon)}
-                    size={24}
-                    color={categoryId === category.id ? COLORS.primary : COLORS.textSecondary}
+                    name={mode.icon as any}
+                    size={20}
+                    color={paymentMode === mode.value ? COLORS.textInverse : COLORS.textSecondary}
                   />
                   <Text
                     style={[
-                      styles.categoryLabel,
-                      categoryId === category.id && styles.categoryLabelActive,
+                      styles.paymentModeText,
+                      paymentMode === mode.value && styles.paymentModeTextActive,
                     ]}
-                    numberOfLines={2}
                   >
-                    {category.label}
+                    {mode.label}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -312,10 +432,17 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  contentContainer: {
     padding: SPACING.md,
+    paddingBottom: SPACING.xxl * 2,
+    flexGrow: 1,
   },
   section: {
-    marginBottom: SPACING.lg,
+    marginBottom: SPACING.xl,
+    width: '100%',
+    zIndex: 1,
+    opacity: 1,
   },
   sectionTitle: {
     ...TYPOGRAPHY.captionBold,
@@ -357,35 +484,123 @@ const styles = StyleSheet.create({
   typeButtonTextActiveIncome: {
     color: COLORS.textInverse,
   },
+  categoryGridContainer: {
+    width: '100%',
+    marginTop: SPACING.md,
+    minHeight: 200,
+    backgroundColor: 'transparent',
+  },
   categoryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.md,
+    width: '100%',
+    justifyContent: 'flex-start',
+    paddingVertical: SPACING.md,
+    alignItems: 'flex-start',
+  },
+  categoryButton: {
+    width: '30%',
+    minWidth: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: SPACING.lg,
+    paddingHorizontal: SPACING.sm,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.surface,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    gap: SPACING.sm,
+    minHeight: 130,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  categoryButtonActive: {
+    backgroundColor: COLORS.primaryLight + '20',
+    borderColor: COLORS.primary,
+    borderWidth: 2,
+  },
+  categoryIconContainer: {
+    width: 70,
+    height: 70,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  categoryIconContainerActive: {
+    backgroundColor: COLORS.primaryLight + '20',
+    borderColor: COLORS.primary,
+    borderWidth: 3,
+  },
+  categoryLabel: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.text,
+    textAlign: 'center',
+    fontWeight: '600',
+    fontSize: 12,
+  },
+  categoryLabelActive: {
+    color: COLORS.primary,
+    ...TYPOGRAPHY.captionBold,
+  },
+  emptyCategoriesContainer: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: SPACING.xl,
+    gap: SPACING.sm,
+    backgroundColor: COLORS.background,
+    borderRadius: RADIUS.md,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    borderStyle: 'dashed',
+    minHeight: 150,
+    marginTop: SPACING.md,
+  },
+  emptyCategoriesText: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.textTertiary,
+  },
+  paymentModeContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: SPACING.sm,
   },
-  categoryButton: {
-    width: '30%',
-    aspectRatio: 1,
+  paymentModeButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: SPACING.sm,
+    gap: SPACING.xs,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
     borderRadius: RADIUS.md,
     backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.border,
+    minWidth: 80,
+    justifyContent: 'center',
   },
-  categoryButtonActive: {
-    backgroundColor: COLORS.primaryLight + '15',
+  paymentModeButtonActive: {
+    backgroundColor: COLORS.primary,
     borderColor: COLORS.primary,
-    borderWidth: 2,
   },
-  categoryLabel: {
+  paymentModeText: {
     ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
-    textAlign: 'center',
-    marginTop: SPACING.xs,
   },
-  categoryLabelActive: {
-    color: COLORS.primary,
+  paymentModeTextActive: {
+    color: COLORS.textInverse,
     ...TYPOGRAPHY.captionBold,
   },
   noteInput: {
@@ -424,4 +639,3 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xl,
   },
 });
-

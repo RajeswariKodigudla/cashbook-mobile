@@ -44,27 +44,55 @@ export const Button: React.FC<ButtonProps> = ({
     fullWidth && styles.fullWidth,
     isDisabled && styles.disabled,
     isWeb && styles.webButton,
+    isDisabled && { pointerEvents: 'none' as const },
     style,
   ];
 
+  // On web, don't use disabled prop to avoid pointerEvents deprecation warning
+  // Use style.pointerEvents instead
+  if (isWeb) {
+    return (
+      <TouchableOpacity
+        style={buttonStyle}
+        onPress={isDisabled ? undefined : onPress}
+        activeOpacity={0.7}
+        // @ts-ignore - web only
+        onMouseEnter={(e: any) => {
+          if (!isDisabled) {
+            e.currentTarget.style.opacity = '0.9';
+          }
+        }}
+        // @ts-ignore - web only
+        onMouseLeave={(e: any) => {
+          e.currentTarget.style.opacity = '1';
+        }}
+      >
+        {loading ? (
+          <ActivityIndicator color={iconColor} size="small" />
+        ) : (
+          <>
+            {icon && iconPosition === 'left' && (
+              <Ionicons name={icon as any} size={iconSize} color={iconColor} style={styles.iconLeft} />
+            )}
+            <Text style={[styles.text, styles[`text_${variant}`], styles[`textSize_${size}`]]}>
+              {title}
+            </Text>
+            {icon && iconPosition === 'right' && (
+              <Ionicons name={icon as any} size={iconSize} color={iconColor} style={styles.iconRight} />
+            )}
+          </>
+        )}
+      </TouchableOpacity>
+    );
+  }
+
+  // Native platforms - use disabled prop
   return (
     <TouchableOpacity
       style={buttonStyle}
       onPress={onPress}
       disabled={isDisabled}
       activeOpacity={0.7}
-      // @ts-ignore - web only
-      onMouseEnter={(e: any) => {
-        if (isWeb && !isDisabled) {
-          e.currentTarget.style.opacity = '0.9';
-        }
-      }}
-      // @ts-ignore - web only
-      onMouseLeave={(e: any) => {
-        if (isWeb) {
-          e.currentTarget.style.opacity = '1';
-        }
-      }}
     >
       {loading ? (
         <ActivityIndicator color={iconColor} size="small" />

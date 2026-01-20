@@ -8,12 +8,22 @@ import {
   Alert,
   ScrollView,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { transactionsAPI } from '../services/api';
+import { CATEGORIES } from '../constants';
+import { getCategoryIcon } from '../utils/iconUtils';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../contexts/AuthContext';
+import { useAccount } from '../contexts/AccountContext';
+import { validateTransactionActionOrThrow } from '../utils/transactionValidation';
 
 export default function IncomeScreen({ navigation }) {
+  const { user } = useAuth();
+  const { currentAccount, currentUserMembership, refreshNotifications } = useAccount();
   const [amount, setAmount] = useState('');
   const [name, setName] = useState('');
+  const [categoryId, setCategoryId] = useState('');
   const [remark, setRemark] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   
@@ -28,7 +38,18 @@ export default function IncomeScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Filter income categories
+  const incomeCategories = CATEGORIES.filter(cat => cat.type === 'INCOME');
+
   const handleSave = async () => {
+    // Log current user information
+    console.log('👤 [IncomeScreen] Current logged-in user:', {
+      username: user?.username || 'NOT LOGGED IN',
+      userId: user?.id || 'N/A',
+      email: user?.email || 'N/A',
+      fullUser: user
+    });
+    
     if (!amount) {
       setError('Amount is required');
       return;
@@ -57,15 +78,64 @@ export default function IncomeScreen({ navigation }) {
         }
       }
 
+      // Use selected categoryId, or map name to categoryId if categoryId not selected
+      let finalCategoryId = categoryId;
+      if (!finalCategoryId && name) {
+        const category = CATEGORIES.find(cat => 
+          cat.type === 'INCOME' && 
+          (cat.label.toLowerCase() === name.toLowerCase() || 
+           cat.id === name.toLowerCase() ||
+           cat.label.toLowerCase().includes(name.toLowerCase()) ||
+           name.toLowerCase().includes(cat.label.toLowerCase()))
+        );
+        if (category) {
+          finalCategoryId = category.id;
+        }
+      }
+
       const transactionData = {
         type: 'Income', // Backend expects capitalized
         amount: amountValue,
         date: date,
         time: formattedTime || undefined,
         name: name || '',
+        categoryId: finalCategoryId || undefined,
         remark: remark || '',
         mode: mode || 'Cash',
       };
+
+      // CRITICAL: Add accountId if creating transaction for a shared account
+      // For personal account, don't include accountId (or set to null)
+      // CRITICAL: Handle account ID type conversion (number to string or vice versa)
+      const accountId = currentAccount?.id;
+      const accountIdString = accountId ? String(accountId) : null;
+      const accountIdNumber = accountId && accountId !== 'personal' ? (typeof accountId === 'number' ? accountId : parseInt(accountId)) : null;
+      
+      console.log('🔍 Current account check:', {
+        currentAccount: currentAccount,
+        accountId: accountId,
+        accountIdType: typeof accountId,
+        accountIdString: accountIdString,
+        accountIdNumber: accountIdNumber,
+        isPersonal: accountId === 'personal' || !accountId
+      });
+      
+      if (currentAccount && accountId && accountId !== 'personal' && accountIdNumber) {
+        // Ensure accountId is a number for the backend
+        transactionData.accountId = accountIdNumber;
+        console.log('🔍 [VERIFY] Income transaction - Setting accountId:', accountIdNumber);
+        console.log('🔍 [VERIFY] Transaction will be saved with account_id:', accountIdNumber, 'in database');
+        console.log('📝 Adding accountId to transaction:', accountIdNumber, '(type:', typeof accountIdNumber, ')');
+      } else {
+        // Personal transaction - explicitly set accountId to null or don't include it
+        // Backend will treat missing/null accountId as personal transaction
+        console.log('📝 Creating personal transaction (no accountId)');
+        console.log('📝 Account check result:', {
+          hasCurrentAccount: !!currentAccount,
+          accountId: accountId,
+          isPersonal: accountId === 'personal' || !accountId
+        });
+      }
 
       // CRITICAL: Ensure type is always capitalized
       if (transactionData.type) {
@@ -77,23 +147,151 @@ export default function IncomeScreen({ navigation }) {
         }
       }
 
-      // Remove null/undefined values
+      // Remove null/undefined values (but keep accountId if it's 0 or valid number)
       Object.keys(transactionData).forEach((key) => {
         if (transactionData[key] === null || transactionData[key] === undefined) {
           delete transactionData[key];
         }
       });
 
+      // CRITICAL: Skip ALL client-side validation for add/create actions
+      // Backend is the source of truth and will verify permissions
+      // Client-side validation was causing false negatives and blocking legitimate users
+      if (user && currentAccount && currentAccount.id && currentAccount.id !== 'personal' && currentUserMembership) {
+        console.log('✅ Skipping client-side validation for add action. Backend will verify permissions.');
+        console.log('🔍 Membership info:', {
+          status: currentUserMembership.status,
+          id: currentUserMembership.id,
+          accountId: currentUserMembership.accountId
+        });
+      } else if (user && currentAccount && currentAccount.id && currentAccount.id !== 'personal' && !currentUserMembership) {
+        // Membership not loaded - log warning but allow backend to verify
+        console.warn('⚠️ Membership not loaded for account, letting backend verify permissions');
+      }
+      
       console.log('📤 Sending income transaction:', transactionData);
-      await transactionsAPI.create(transactionData);
+      console.log('📤 Transaction accountId:', transactionData.accountId || 'null (personal)');
+      console.log('📤 Current account:', currentAccount);
+      console.log('📤 Current user membership:', currentUserMembership);
+      
+      const response = await transactionsAPI.create(transactionData);
+      console.log('✅ Income transaction saved successfully:', response);
+      
+      // Refresh notifications IMMEDIATELY after transaction creation (for shared accounts)
+      if (currentAccount && currentAccount.id && currentAccount.id !== 'personal') {
+        console.log('📬 [IncomeScreen] Transaction saved to shared account, refreshing notifications IMMEDIATELY...');
+        // Refresh notifications immediately - backend creates them synchronously before response
+        // Add a small delay to ensure backend has fully committed the notification
+        setTimeout(() => {
+          refreshNotifications();
+        }, 100); // 100ms delay to ensure backend commit is complete
+      }
 
-      Alert.alert('Success', 'Income transaction saved!', [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
+      // Extract transaction ID from response
+      let transactionId = null;
+      if (response) {
+        if (response.data && response.data.id) {
+          transactionId = response.data.id;
+        } else if (response.id) {
+          transactionId = response.id;
+        } else if (response.data && typeof response.data === 'object' && response.data.transaction_id) {
+          transactionId = response.data.transaction_id;
+        }
+      }
+      console.log('📝 New transaction ID:', transactionId);
+
+      // Reset form fields
+      setAmount('');
+      setName('');
+      setCategoryId('');
+      setRemark('');
+      setDate(new Date().toISOString().split('T')[0]);
+      setTime(getCurrentTime24());
+      setMode('Cash');
+      setError('');
+
+      // Invalidate cache for this account
+      if (currentAccount) {
+        const { cacheHelpers } = require('../services/cacheService');
+        await cacheHelpers.invalidateAccountCache(currentAccount.id === 'personal' ? null : currentAccount.id);
+      }
+
+      // Navigate immediately to Home screen with transaction ID to highlight it
+      if (navigation && navigation.navigate) {
+        console.log('🔄 Navigating to Home screen with new transaction ID:', transactionId);
+        navigation.navigate('Home', { 
+          newTransactionId: transactionId,
+          highlightNewTransaction: true 
+        });
+      } else if (navigation && navigation.goBack) {
+        navigation.goBack();
+      }
+
+      // Show success message (non-blocking)
+      Alert.alert('Success', 'Income transaction saved successfully!', [{ text: 'OK' }]);
     } catch (error) {
       console.error('❌ Error saving income:', error);
-      setError(error.message || 'Failed to save transaction');
-      Alert.alert('Error', error.message || 'Failed to save transaction');
+      console.error('❌ Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        accountId: transactionData.accountId,
+        currentAccount: currentAccount,
+      });
+      
+      // Check if it's a permission/account error from backend
+      const backendError = error.response?.data;
+      if (backendError) {
+        // Check for account-related errors
+        if (backendError.account) {
+          const accountError = Array.isArray(backendError.account) 
+            ? backendError.account[0] 
+            : backendError.account;
+          Alert.alert('Permission Denied', accountError || 'You do not have permission to add transactions to this account.', [{ 
+            text: 'OK',
+            onPress: () => {
+              setLoading(false);
+            }
+          }]);
+          setError(accountError || 'Permission denied');
+          setLoading(false);
+          return;
+        }
+        
+        // Check for general error message
+        if (backendError.error) {
+          const errorMsg = Array.isArray(backendError.error) 
+            ? backendError.error[0] 
+            : backendError.error;
+          Alert.alert('Error', errorMsg, [{ text: 'OK' }]);
+          setError(errorMsg);
+          setLoading(false);
+          return;
+        }
+      }
+      
+      // Check if it's a network error
+      const isNetworkError = !error.response && (
+        error.message?.includes('Network') ||
+        error.message?.includes('connect') ||
+        error.message?.includes('Cannot connect') ||
+        error.code === 'ECONNREFUSED' ||
+        error.code === 'ERR_NETWORK' ||
+        error.code === 'ETIMEDOUT'
+      );
+      
+      let errorMessage = error.message || 'Failed to save transaction';
+      
+      if (isNetworkError) {
+        errorMessage = 'Cannot connect to server. Please check your internet connection and try again.';
+      }
+      
+      setError(errorMessage);
+      Alert.alert(
+        isNetworkError ? 'Connection Error' : 'Error',
+        errorMessage,
+        [{ text: 'OK' }]
+      );
     } finally {
       setLoading(false);
     }
@@ -141,6 +339,50 @@ export default function IncomeScreen({ navigation }) {
             placeholder="HH:MM"
             placeholderTextColor="#999"
           />
+        </View>
+      </View>
+
+      {/* CATEGORY */}
+      <View style={styles.inputBox}>
+        <Text style={styles.sectionTitle}>Category</Text>
+        <View style={styles.categoryGrid}>
+          {incomeCategories.map((category) => (
+            <TouchableOpacity
+              key={category.id}
+              style={[
+                styles.categoryButton,
+                categoryId === category.id && styles.categoryButtonActive,
+              ]}
+              onPress={() => {
+                setCategoryId(category.id);
+                // Auto-fill name if empty
+                if (!name) {
+                  setName(category.label);
+                }
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={[
+                styles.categoryIconContainer,
+                categoryId === category.id && styles.categoryIconContainerActive,
+              ]}>
+                <Ionicons
+                  name={getCategoryIcon(category.icon)}
+                  size={28}
+                  color={categoryId === category.id ? '#2563EB' : '#64748B'}
+                />
+              </View>
+              <Text
+                style={[
+                  styles.categoryLabel,
+                  categoryId === category.id && styles.categoryLabelActive,
+                ]}
+                numberOfLines={2}
+              >
+                {category.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
       </View>
 
@@ -213,9 +455,9 @@ export default function IncomeScreen({ navigation }) {
         </TouchableOpacity>
         <View style={{ width: 12 }} />
         <TouchableOpacity
-          style={styles.saveButton}
-          onPress={handleSave}
-          disabled={loading}
+          style={[styles.saveButton, loading && { pointerEvents: 'none' }]}
+          onPress={loading ? undefined : handleSave}
+          {...(Platform.OS === 'web' ? {} : { disabled: loading })}
         >
           {loading ? (
             <ActivityIndicator color="#fff" />
@@ -297,6 +539,56 @@ const styles = StyleSheet.create({
   },
   paymentButtonTextActive: {
     color: '#fff',
+  },
+  categoryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginTop: 8,
+  },
+  categoryButton: {
+    width: '30%',
+    minWidth: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 2,
+    borderColor: '#E2E8F0',
+    gap: 8,
+    minHeight: 110,
+  },
+  categoryButtonActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#2563EB',
+    borderWidth: 2,
+  },
+  categoryIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  categoryIconContainerActive: {
+    backgroundColor: '#DBEAFE',
+    borderColor: '#2563EB',
+  },
+  categoryLabel: {
+    fontSize: 11,
+    color: '#0F172A',
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  categoryLabelActive: {
+    color: '#2563EB',
+    fontWeight: '700',
   },
   errorContainer: {
     marginTop: 10,

@@ -2,7 +2,7 @@
  * Enhanced Filter Modal Component
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -35,6 +35,13 @@ export const FilterModal: React.FC<FilterModalProps> = ({
   onClear,
 }) => {
   const [localFilters, setLocalFilters] = useState<TransactionFilters>(filters);
+
+  // Sync localFilters with filters prop when modal opens
+  useEffect(() => {
+    if (visible) {
+      setLocalFilters(filters);
+    }
+  }, [visible, filters]);
 
   const handleApply = () => {
     onApply(localFilters);
@@ -375,4 +382,3 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
 });
-

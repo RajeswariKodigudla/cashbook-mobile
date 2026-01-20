@@ -1,6 +1,5 @@
 /**
- * Modern Analytics & Insights Screen
- * Visual charts and financial insights
+ * Comprehensive Analytics Screen with Charts and Insights
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -12,186 +11,237 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { SafeAreaViewWrapper } from '../components/SafeAreaWrapper';
 import { Card } from '../components/Card';
 import { Ionicons } from '@expo/vector-icons';
-import { useApp } from '../contexts/AppContext';
-import { transactionService } from '../services/apiService';
+import { getTransactions } from '../utils/apiTransactions';
 import { Transaction } from '../types';
-import { COLORS, CATEGORIES, DATE_FILTER_OPTIONS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants';
+import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants';
 import { formatCurrency } from '../utils/formatUtils';
-import { isInDateRange } from '../utils/dateUtils';
-import { getCategoryIcon } from '../utils/iconUtils';
-import { isWeb, getResponsiveValue } from '../utils/responsive';
+import { isInDateRange, getDateRange } from '../utils/dateUtils';
+import { CATEGORIES } from '../constants';
+import { getChartComponents } from '../utils/chartLoader';
 
-const { width } = Dimensions.get('window');
-const CHART_WIDTH = width - SPACING.xl * 2;
+const screenWidth = Dimensions.get('window').width;
+const chartWidth = screenWidth - SPACING.md * 2;
 
-const AnalyticsScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { username } = useApp();
+const FILTER_OPTIONS = [
+  { label: 'Month', value: 'MONTH' },
+  { label: 'Week', value: 'WEEK' },
+  { label: 'Year', value: 'YEAR' },
+  { label: 'All', value: 'ALL' },
+];
+
+const AnalyticsScreen: React.FC<{ navigation: any; route?: any }> = ({ navigation, route }) => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dateFilter, setDateFilter] = useState<typeof DATE_FILTER_OPTIONS[number]['value']>('MONTH');
+  const [activeFilter, setActiveFilter] = useState<'MONTH' | 'WEEK' | 'YEAR' | 'ALL'>('MONTH');
 
   useEffect(() => {
     loadTransactions();
   }, []);
 
-  useEffect(() => {
-    if (transactions.length > 0) {
-      setLoading(false);
-    }
-  }, [transactions]);
-
   const loadTransactions = async () => {
     try {
-      const data = await transactionService.getTransactions();
-      setTransactions(data || []);
+      const data = await getTransactions();
+      const transactionsArray = Array.isArray(data) ? data : [];
+      setTransactions(transactionsArray as Transaction[]);
     } catch (error) {
       console.error('Error loading transactions:', error);
       setTransactions([]);
+    } finally {
+      setLoading(false);
     }
   };
 
   const filteredTransactions = useMemo(() => {
-    if (dateFilter === 'ALL') return transactions;
-    return transactions.filter(tx => isInDateRange(tx.timestamp, dateFilter));
-  }, [transactions, dateFilter]);
+    if (activeFilter === 'ALL') return transactions;
+    return transactions.filter(tx => {
+      const timestamp = tx.timestamp || (tx.date ? new Date(tx.date).getTime() : Date.now());
+      return isInDateRange(timestamp, activeFilter);
+    });
+  }, [transactions, activeFilter]);
 
-  // Calculate insights
-  const insights = useMemo(() => {
+  // Calculate summary statistics
+  const summary = useMemo(() => {
     const income = filteredTransactions
-      .filter(tx => tx.type === 'INCOME')
-      .reduce((sum, tx) => sum + (tx.amount || 0), 0);
+      .filter(tx => {
+        const type = String(tx.type || tx.transaction_type || '').toLowerCase().trim();
+        return type === 'income' || type === 'in' || type === 'credit' || type === 'i' || type === 'inc' || 
+               (tx.amount && tx.amount > 0 && !tx.is_expense && type !== 'expense' && type !== 'ex');
+      })
+      .reduce((sum, tx) => sum + Math.abs(tx.amount || 0), 0);
     
     const expenses = filteredTransactions
-      .filter(tx => tx.type === 'EXPENSE')
-      .reduce((sum, tx) => sum + (tx.amount || 0), 0);
+      .filter(tx => {
+        const type = String(tx.type || tx.transaction_type || '').toLowerCase().trim();
+        return type === 'expense' || type === 'ex' || type === 'out' || type === 'debit' || type === 'exp' || type === 'e' ||
+               (tx.amount && (tx.amount < 0 || tx.is_expense));
+      })
+      .reduce((sum, tx) => sum + Math.abs(tx.amount || 0), 0);
     
     const balance = income - expenses;
-    
-    // Category breakdown
-    const categoryBreakdown = CATEGORIES.map(category => {
-      const categoryTotal = filteredTransactions
-        .filter(tx => tx.categoryId === category.id)
-        .reduce((sum, tx) => sum + (tx.amount || 0), 0);
-      return { ...category, total: categoryTotal };
-    }).filter(c => c.total > 0)
-      .sort((a, b) => b.total - a.total);
+    const savingsRate = income > 0 ? ((balance / income) * 100).toFixed(1) : '0';
 
-    // Daily spending trend (last 7 days)
-    const dailyTrend = [];
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      date.setHours(0, 0, 0, 0);
-      const nextDate = new Date(date);
-      nextDate.setDate(nextDate.getDate() + 1);
-      
-      const dayExpenses = filteredTransactions
-        .filter(tx => tx.type === 'EXPENSE' && 
-          tx.timestamp >= date.getTime() && 
-          tx.timestamp < nextDate.getTime())
-        .reduce((sum, tx) => sum + (tx.amount || 0), 0);
-      
-      dailyTrend.push({
-        day: date.toLocaleDateString('en-US', { weekday: 'short' }),
-        amount: dayExpenses,
-      });
-    }
-
-    // Top spending categories
-    const topCategories = categoryBreakdown
-      .filter(c => c.type === 'EXPENSE')
-      .slice(0, 5);
-
-    return {
-      income,
-      expenses,
-      balance,
-      categoryBreakdown,
-      dailyTrend,
-      topCategories,
-      transactionCount: filteredTransactions.length,
-    };
+    return { income, expenses, balance, savingsRate };
   }, [filteredTransactions]);
 
-  const renderSimpleBarChart = (data: { day: string; amount: number }[]) => {
-    const maxAmount = Math.max(...data.map(d => d.amount), 1);
-    const barWidth = (CHART_WIDTH - SPACING.md * (data.length - 1)) / data.length;
+  // Prepare data for line chart (income vs expenses over time)
+  const lineChartData = useMemo(() => {
+    const now = new Date();
+    const days = activeFilter === 'WEEK' ? 7 : activeFilter === 'MONTH' ? 30 : activeFilter === 'YEAR' ? 12 : 30;
+    const labels: string[] = [];
+    const incomeData: number[] = [];
+    const expenseData: number[] = [];
 
-    return (
-      <View style={styles.chartContainer}>
-        <View style={styles.chartBars}>
-          {data.map((item, index) => {
-            const height = maxAmount > 0 ? (item.amount / maxAmount) * 150 : 0;
-            return (
-              <View key={index} style={styles.barWrapper}>
-                <View style={styles.barContainer}>
-                  <View
-                    style={[
-                      styles.bar,
-                      {
-                        height: Math.max(height, 4),
-                        width: barWidth - 4,
-                        backgroundColor: COLORS.primary,
-                      },
-                    ]}
-                  />
-                </View>
-                <Text style={styles.barLabel}>{item.day}</Text>
-                <Text style={styles.barValue}>{formatCurrency(item.amount)}</Text>
-              </View>
-            );
-          })}
-        </View>
-      </View>
-    );
-  };
+    for (let i = days - 1; i >= 0; i--) {
+      const date = new Date(now);
+      if (activeFilter === 'WEEK') {
+        date.setDate(date.getDate() - i);
+        labels.push(date.toLocaleDateString('en-US', { weekday: 'short' }));
+      } else if (activeFilter === 'MONTH') {
+        date.setDate(date.getDate() - i);
+        labels.push(date.getDate().toString());
+      } else if (activeFilter === 'YEAR') {
+        date.setMonth(date.getMonth() - i);
+        labels.push(date.toLocaleDateString('en-US', { month: 'short' }));
+      } else {
+        date.setDate(date.getDate() - i);
+        labels.push(date.getDate().toString());
+      }
 
-  const renderCategoryChart = (categories: typeof insights.topCategories) => {
-    const maxAmount = Math.max(...categories.map(c => c.total), 1);
+      const dayStart = new Date(date);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(date);
+      dayEnd.setHours(23, 59, 59, 999);
 
-    return (
-      <View style={styles.categoryChart}>
-        {categories.map((category, index) => {
-          const percentage = (category.total / maxAmount) * 100;
-          return (
-            <View key={category.id} style={styles.categoryRow}>
-              <View style={styles.categoryInfo}>
-                <View style={styles.categoryIconContainer}>
-                  <Ionicons
-                    name={getCategoryIcon(category.icon) as any}
-                    size={20}
-                    color={COLORS.primary}
-                  />
-                </View>
-                <Text style={styles.categoryName} numberOfLines={1}>
-                  {category.label}
-                </Text>
-              </View>
-              <View style={styles.categoryBarContainer}>
-                <View style={styles.categoryBarBackground}>
-                  <View
-                    style={[
-                      styles.categoryBar,
-                      {
-                        width: `${percentage}%`,
-                        backgroundColor: COLORS.expense,
-                      },
-                    ]}
-                  />
-                </View>
-                <Text style={styles.categoryAmount}>
-                  {formatCurrency(category.total)}
-                </Text>
-              </View>
-            </View>
-          );
-        })}
-      </View>
-    );
+      const dayIncome = filteredTransactions
+        .filter(tx => {
+          const txDate = new Date(tx.timestamp || (tx.date ? new Date(tx.date).getTime() : Date.now()));
+          const type = String(tx.type || tx.transaction_type || '').toLowerCase().trim();
+          return txDate >= dayStart && txDate <= dayEnd && 
+                 (type === 'income' || type === 'in' || type === 'credit' || type === 'i' || type === 'inc' || 
+                  (tx.amount && tx.amount > 0 && !tx.is_expense && type !== 'expense' && type !== 'ex'));
+        })
+        .reduce((sum, tx) => sum + Math.abs(tx.amount || 0), 0);
+
+      const dayExpense = filteredTransactions
+        .filter(tx => {
+          const txDate = new Date(tx.timestamp || (tx.date ? new Date(tx.date).getTime() : Date.now()));
+          const type = String(tx.type || tx.transaction_type || '').toLowerCase().trim();
+          return txDate >= dayStart && txDate <= dayEnd && 
+                 (type === 'expense' || type === 'ex' || type === 'out' || type === 'debit' || type === 'exp' || type === 'e' ||
+                  (tx.amount && (tx.amount < 0 || tx.is_expense)));
+        })
+        .reduce((sum, tx) => sum + Math.abs(tx.amount || 0), 0);
+
+      incomeData.push(dayIncome);
+      expenseData.push(dayExpense);
+    }
+
+    return {
+      labels: labels.slice(-7), // Show last 7 labels for readability
+      datasets: [
+        {
+          data: incomeData.slice(-7),
+          color: (opacity = 1) => COLORS.success,
+          strokeWidth: 2,
+        },
+        {
+          data: expenseData.slice(-7),
+          color: (opacity = 1) => COLORS.error,
+          strokeWidth: 2,
+        },
+      ],
+      legend: ['Income', 'Expenses'],
+    };
+  }, [filteredTransactions, activeFilter]);
+
+  // Prepare data for pie chart (category breakdown)
+  const pieChartData = useMemo(() => {
+    const categoryMap = new Map<string, number>();
+    
+    filteredTransactions
+      .filter(tx => {
+        const type = String(tx.type || tx.transaction_type || '').toLowerCase().trim();
+        return type === 'expense' || type === 'ex' || type === 'out' || type === 'debit' || type === 'exp' || type === 'e' ||
+               (tx.amount && (tx.amount < 0 || tx.is_expense));
+      })
+      .forEach(tx => {
+        const categoryId = tx.categoryId || tx.category_id || 'other_exp';
+        const category = CATEGORIES.find(c => c.id === categoryId);
+        const categoryName = category?.label || 'Other';
+        const current = categoryMap.get(categoryName) || 0;
+        categoryMap.set(categoryName, current + Math.abs(tx.amount || 0));
+      });
+
+    const colors = [
+      COLORS.primary,
+      COLORS.success,
+      COLORS.error,
+      COLORS.warning,
+      '#8B5CF6',
+      '#EC4899',
+      '#14B8A6',
+      '#F59E0B',
+    ];
+
+    return Array.from(categoryMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([name, value], index) => ({
+        name: name.length > 12 ? name.substring(0, 12) + '...' : name,
+        amount: value,
+        color: colors[index % colors.length],
+        legendFontColor: COLORS.text,
+        legendFontSize: 12,
+      }));
+  }, [filteredTransactions]);
+
+  // Top spending categories
+  const topCategories = useMemo(() => {
+    const categoryMap = new Map<string, { amount: number; count: number }>();
+    
+    filteredTransactions
+      .filter(tx => {
+        const type = String(tx.type || tx.transaction_type || '').toLowerCase().trim();
+        return type === 'expense' || type === 'ex' || type === 'out' || type === 'debit' || type === 'exp' || type === 'e' ||
+               (tx.amount && (tx.amount < 0 || tx.is_expense));
+      })
+      .forEach(tx => {
+        const categoryId = tx.categoryId || tx.category_id || 'other_exp';
+        const category = CATEGORIES.find(c => c.id === categoryId);
+        const categoryName = category?.label || 'Other';
+        const current = categoryMap.get(categoryName) || { amount: 0, count: 0 };
+        categoryMap.set(categoryName, {
+          amount: current.amount + Math.abs(tx.amount || 0),
+          count: current.count + 1,
+        });
+      });
+
+    return Array.from(categoryMap.entries())
+      .map(([name, data]) => ({ name, ...data }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 5);
+  }, [filteredTransactions]);
+
+  const chartConfig = {
+    backgroundColor: COLORS.surface,
+    backgroundGradientFrom: COLORS.surface,
+    backgroundGradientTo: COLORS.surface,
+    decimalPlaces: 0,
+    color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
+    labelColor: (opacity = 1) => `rgba(15, 23, 42, ${opacity})`,
+    style: {
+      borderRadius: RADIUS.md,
+    },
+    propsForDots: {
+      r: '4',
+      strokeWidth: '2',
+      stroke: COLORS.primary,
+    },
   };
 
   if (loading) {
@@ -224,25 +274,25 @@ const AnalyticsScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           <View style={styles.placeholder} />
         </View>
 
-        {/* Date Filter */}
+        {/* Filter Tabs */}
         <View style={styles.filterContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {DATE_FILTER_OPTIONS.map((option) => (
+            {FILTER_OPTIONS.map((filter) => (
               <TouchableOpacity
-                key={option.value}
+                key={filter.value}
                 style={[
                   styles.filterButton,
-                  dateFilter === option.value && styles.filterButtonActive,
+                  activeFilter === filter.value && styles.filterButtonActive,
                 ]}
-                onPress={() => setDateFilter(option.value)}
+                onPress={() => setActiveFilter(filter.value as any)}
               >
                 <Text
                   style={[
                     styles.filterButtonText,
-                    dateFilter === option.value && styles.filterButtonTextActive,
+                    activeFilter === filter.value && styles.filterButtonTextActive,
                   ]}
                 >
-                  {option.label}
+                  {filter.label}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -252,95 +302,216 @@ const AnalyticsScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         {/* Summary Cards */}
         <View style={styles.summaryGrid}>
           <Card style={styles.summaryCard}>
-            <View style={styles.summaryCardHeader}>
+            <View style={styles.summaryCardContent}>
               <Ionicons name="trending-up" size={24} color={COLORS.success} />
-              <Text style={styles.summaryCardLabel}>Income</Text>
+              <Text style={styles.summaryLabel}>Income</Text>
+              <Text style={[styles.summaryValue, { color: COLORS.success }]}>
+                {formatCurrency(summary.income)}
+              </Text>
             </View>
-            <Text style={[styles.summaryCardValue, { color: COLORS.success }]}>
-              {formatCurrency(insights.income)}
-            </Text>
           </Card>
-
           <Card style={styles.summaryCard}>
-            <View style={styles.summaryCardHeader}>
+            <View style={styles.summaryCardContent}>
               <Ionicons name="trending-down" size={24} color={COLORS.error} />
-              <Text style={styles.summaryCardLabel}>Expenses</Text>
+              <Text style={styles.summaryLabel}>Expenses</Text>
+              <Text style={[styles.summaryValue, { color: COLORS.error }]}>
+                {formatCurrency(summary.expenses)}
+              </Text>
             </View>
-            <Text style={[styles.summaryCardValue, { color: COLORS.error }]}>
-              {formatCurrency(insights.expenses)}
-            </Text>
           </Card>
         </View>
 
-        <Card style={styles.balanceCard}>
-          <View style={styles.balanceHeader}>
-            <Ionicons name="wallet" size={28} color={COLORS.primary} />
-            <Text style={styles.balanceLabel}>Net Balance</Text>
-          </View>
-          <Text
-            style={[
-              styles.balanceValue,
-              { color: insights.balance >= 0 ? COLORS.success : COLORS.error },
-            ]}
-          >
-            {formatCurrency(insights.balance)}
-          </Text>
-          <Text style={styles.balanceSubtext}>
-            {insights.transactionCount} transactions
-          </Text>
-        </Card>
-
-        {/* Daily Spending Trend */}
-        {insights.dailyTrend.length > 0 && (
+        {/* Income vs Expenses Line Chart */}
+        {lineChartData.datasets[0].data.some(d => d > 0) || lineChartData.datasets[1].data.some(d => d > 0) ? (
           <Card style={styles.chartCard}>
-            <View style={styles.chartHeader}>
-              <Ionicons name="bar-chart" size={24} color={COLORS.primary} />
-              <Text style={styles.chartTitle}>Daily Spending Trend</Text>
+            <Text style={styles.chartTitle}>Income vs Expenses Trend</Text>
+            {(() => {
+              const { LineChart: ChartComponent } = getChartComponents();
+              if (ChartComponent && Platform.OS !== 'web') {
+                return (
+                  <ChartComponent
+                    data={lineChartData}
+                    width={chartWidth}
+                    height={220}
+                    chartConfig={chartConfig}
+                    bezier
+                    style={styles.chart}
+                  />
+                );
+              }
+              return (
+                <View style={styles.chartFallback}>
+                  <View style={styles.chartFallbackContent}>
+                    {lineChartData.datasets[0].data.map((income, index) => {
+                      const expense = lineChartData.datasets[1].data[index];
+                      const maxValue = Math.max(...lineChartData.datasets[0].data, ...lineChartData.datasets[1].data);
+                      const incomeHeight = maxValue > 0 ? (income / maxValue) * 100 : 0;
+                      const expenseHeight = maxValue > 0 ? (expense / maxValue) * 100 : 0;
+                      return (
+                        <View key={index} style={styles.chartBarContainer}>
+                          <View style={styles.chartBarGroup}>
+                            <View style={[styles.chartBar, styles.chartBarIncome, { height: `${incomeHeight}%` }]} />
+                            <View style={[styles.chartBar, styles.chartBarExpense, { height: `${expenseHeight}%` }]} />
+                          </View>
+                          <Text style={styles.chartBarLabel}>{lineChartData.labels[index]}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                  <View style={styles.chartLegend}>
+                    <View style={styles.chartLegendItem}>
+                      <View style={[styles.chartLegendColor, { backgroundColor: COLORS.success }]} />
+                      <Text style={styles.chartLegendText}>Income</Text>
+                    </View>
+                    <View style={styles.chartLegendItem}>
+                      <View style={[styles.chartLegendColor, { backgroundColor: COLORS.error }]} />
+                      <Text style={styles.chartLegendText}>Expenses</Text>
+                    </View>
+                  </View>
+                </View>
+              );
+            })()}
+          </Card>
+        ) : (
+          <Card style={styles.chartCard}>
+            <Text style={styles.chartTitle}>Income vs Expenses Trend</Text>
+            <View style={styles.emptyChart}>
+              <Ionicons name="bar-chart-outline" size={48} color={COLORS.textTertiary} />
+              <Text style={styles.emptyChartText}>No data available for this period</Text>
             </View>
-            {renderSimpleBarChart(insights.dailyTrend)}
           </Card>
         )}
 
-        {/* Top Categories */}
-        {insights.topCategories.length > 0 && (
+        {/* Category Breakdown Pie Chart */}
+        {pieChartData.length > 0 ? (
           <Card style={styles.chartCard}>
-            <View style={styles.chartHeader}>
-              <Ionicons name="pie-chart" size={24} color={COLORS.primary} />
+            <Text style={styles.chartTitle}>Expense by Category</Text>
+            {(() => {
+              const { PieChart: ChartComponent } = getChartComponents();
+              if (ChartComponent && Platform.OS !== 'web') {
+                return (
+                  <ChartComponent
+                    data={pieChartData}
+                    width={chartWidth}
+                    height={220}
+                    chartConfig={chartConfig}
+                    accessor="amount"
+                    backgroundColor="transparent"
+                    paddingLeft="15"
+                    style={styles.chart}
+                  />
+                );
+              }
+              return (
+                <View style={styles.categoryBreakdown}>
+                  {pieChartData.map((item, index) => {
+                    const total = pieChartData.reduce((sum, d) => sum + d.amount, 0);
+                    const percentage = total > 0 ? ((item.amount / total) * 100).toFixed(1) : '0';
+                    return (
+                      <View key={index} style={styles.categoryBreakdownItem}>
+                        <View style={[styles.categoryBreakdownColor, { backgroundColor: item.color }]} />
+                        <View style={styles.categoryBreakdownInfo}>
+                          <Text style={styles.categoryBreakdownName}>{item.name}</Text>
+                          <Text style={styles.categoryBreakdownAmount}>{formatCurrency(item.amount)} ({percentage}%)</Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              );
+            })()}
+          </Card>
+        ) : (
+          <Card style={styles.chartCard}>
+            <Text style={styles.chartTitle}>Expense by Category</Text>
+            <View style={styles.emptyChart}>
+              <Ionicons name="pie-chart-outline" size={48} color={COLORS.textTertiary} />
+              <Text style={styles.emptyChartText}>No expense data available</Text>
+            </View>
+          </Card>
+        )}
+
+        {/* Top Spending Categories */}
+        {topCategories.length > 0 && (
+          <Card style={styles.chartCard}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="list" size={24} color={COLORS.primary} />
               <Text style={styles.chartTitle}>Top Spending Categories</Text>
             </View>
-            {renderCategoryChart(insights.topCategories)}
+            <View style={styles.categoryList}>
+              {topCategories.map((category, index) => {
+                const maxAmount = topCategories[0].amount;
+                const percentage = (category.amount / maxAmount) * 100;
+                return (
+                  <View key={index} style={styles.categoryItem}>
+                    <View style={styles.categoryInfo}>
+                      <Text style={styles.categoryName}>{category.name}</Text>
+                      <Text style={styles.categoryCount}>{category.count} transactions</Text>
+                    </View>
+                    <View style={styles.categoryAmountContainer}>
+                      <Text style={styles.categoryAmount}>{formatCurrency(category.amount)}</Text>
+                      <View style={styles.categoryBar}>
+                        <View
+                          style={[
+                            styles.categoryBarFill,
+                            { width: `${percentage}%`, backgroundColor: COLORS.primary },
+                          ]}
+                        />
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
           </Card>
         )}
 
         {/* Insights */}
         <Card style={styles.insightsCard}>
-          <View style={styles.chartHeader}>
+          <View style={styles.insightsHeader}>
             <Ionicons name="bulb" size={24} color={COLORS.warning} />
-            <Text style={styles.chartTitle}>Insights</Text>
+            <Text style={styles.insightsTitle}>Key Insights</Text>
           </View>
           <View style={styles.insightsList}>
-            {insights.expenses > 0 && (
+            {summary.income > 0 && (
+              <View style={styles.insightItem}>
+                <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
+                <Text style={styles.insightText}>
+                  Total income: {formatCurrency(summary.income)}
+                </Text>
+              </View>
+            )}
+            {summary.expenses > 0 && (
               <View style={styles.insightItem}>
                 <Ionicons name="information-circle" size={20} color={COLORS.primary} />
                 <Text style={styles.insightText}>
-                  Average daily spending: {formatCurrency(insights.expenses / 7)}
+                  Average expense per transaction: {formatCurrency(summary.expenses / filteredTransactions.filter(tx => {
+                    const type = tx.type || (tx.transaction_type as any);
+                    return type === 'EXPENSE' || type === 'EX' || (tx.amount && (tx.amount < 0 || tx.is_expense));
+                  }).length || 1)}
                 </Text>
               </View>
             )}
-            {insights.balance < 0 && (
+            {summary.balance >= 0 ? (
+              <View style={styles.insightItem}>
+                <Ionicons name="happy-outline" size={20} color={COLORS.success} />
+                <Text style={styles.insightText}>
+                  Savings rate: {summary.savingsRate}% - Great job!
+                </Text>
+              </View>
+            ) : (
               <View style={styles.insightItem}>
                 <Ionicons name="warning" size={20} color={COLORS.error} />
                 <Text style={styles.insightText}>
-                  You're spending more than you earn. Consider reducing expenses.
+                  Spending exceeds income. Review your expenses.
                 </Text>
               </View>
             )}
-            {insights.topCategories.length > 0 && (
+            {topCategories.length > 0 && (
               <View style={styles.insightItem}>
-                <Ionicons name="stats-chart" size={20} color={COLORS.primary} />
+                <Ionicons name="trending-up" size={20} color={COLORS.warning} />
                 <Text style={styles.insightText}>
-                  Top spending category: {insights.topCategories[0].label} (
-                  {formatCurrency(insights.topCategories[0].total)})
+                  Top spending category: {topCategories[0].name} ({formatCurrency(topCategories[0].amount)})
                 </Text>
               </View>
             )}
@@ -424,162 +595,202 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: SPACING.md,
   },
-  summaryCardHeader: {
-    flexDirection: 'row',
+  summaryCardContent: {
     alignItems: 'center',
     gap: SPACING.xs,
-    marginBottom: SPACING.sm,
   },
-  summaryCardLabel: {
+  summaryLabel: {
     ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
   },
-  summaryCardValue: {
-    ...TYPOGRAPHY.h2,
+  summaryValue: {
+    ...TYPOGRAPHY.h3,
     fontWeight: '700',
-  },
-  balanceCard: {
-    marginHorizontal: SPACING.md,
-    marginBottom: SPACING.md,
-    padding: SPACING.lg,
-    alignItems: 'center',
-    backgroundColor: COLORS.primaryLight + '10',
-  },
-  balanceHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    marginBottom: SPACING.sm,
-  },
-  balanceLabel: {
-    ...TYPOGRAPHY.bodyBold,
-    color: COLORS.textSecondary,
-  },
-  balanceValue: {
-    ...TYPOGRAPHY.h1,
-    fontWeight: '700',
-    marginBottom: SPACING.xs,
-  },
-  balanceSubtext: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textTertiary,
   },
   chartCard: {
     marginHorizontal: SPACING.md,
     marginBottom: SPACING.md,
     padding: SPACING.lg,
   },
-  chartHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    marginBottom: SPACING.lg,
-  },
   chartTitle: {
     ...TYPOGRAPHY.h3,
     color: COLORS.text,
+    marginBottom: SPACING.md,
   },
-  chartContainer: {
-    marginTop: SPACING.md,
+  chart: {
+    marginVertical: SPACING.sm,
+    borderRadius: RADIUS.md,
   },
-  chartBars: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    height: 180,
-    paddingBottom: SPACING.md,
-  },
-  barWrapper: {
-    flex: 1,
+  emptyChart: {
+    height: 220,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginHorizontal: 2,
+    gap: SPACING.sm,
   },
-  barContainer: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    width: '100%',
-    alignItems: 'center',
-  },
-  bar: {
-    borderRadius: RADIUS.sm,
-    minHeight: 4,
-  },
-  barLabel: {
-    ...TYPOGRAPHY.small,
-    color: COLORS.textSecondary,
-    marginTop: SPACING.xs,
-  },
-  barValue: {
-    ...TYPOGRAPHY.small,
+  emptyChartText: {
+    ...TYPOGRAPHY.body,
     color: COLORS.textTertiary,
-    fontSize: 10,
-    marginTop: 2,
   },
-  categoryChart: {
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  categoryList: {
     gap: SPACING.md,
   },
-  categoryRow: {
-    marginBottom: SPACING.md,
+  categoryItem: {
+    gap: SPACING.xs,
   },
   categoryInfo: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.xs,
-    gap: SPACING.sm,
-  },
-  categoryIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: COLORS.expenseLight,
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
   categoryName: {
-    ...TYPOGRAPHY.body,
-    color: COLORS.text,
-    flex: 1,
-  },
-  categoryBarContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-  },
-  categoryBarBackground: {
-    flex: 1,
-    height: 8,
-    backgroundColor: COLORS.border,
-    borderRadius: RADIUS.full,
-    overflow: 'hidden',
-  },
-  categoryBar: {
-    height: '100%',
-    borderRadius: RADIUS.full,
-  },
-  categoryAmount: {
     ...TYPOGRAPHY.bodyBold,
     color: COLORS.text,
-    minWidth: 80,
-    textAlign: 'right',
+  },
+  categoryCount: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textTertiary,
+  },
+  categoryAmountContainer: {
+    gap: SPACING.xs,
+  },
+  categoryAmount: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.text,
+    fontWeight: '600',
+  },
+  categoryBar: {
+    height: 6,
+    backgroundColor: COLORS.border,
+    borderRadius: RADIUS.sm,
+    overflow: 'hidden',
+  },
+  categoryBarFill: {
+    height: '100%',
+    borderRadius: RADIUS.sm,
   },
   insightsCard: {
     marginHorizontal: SPACING.md,
     marginBottom: SPACING.md,
     padding: SPACING.lg,
   },
+  insightsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.lg,
+  },
+  insightsTitle: {
+    ...TYPOGRAPHY.h3,
+    color: COLORS.text,
+  },
   insightsList: {
     gap: SPACING.md,
   },
   insightItem: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: SPACING.sm,
   },
   insightText: {
     ...TYPOGRAPHY.body,
+    color: COLORS.textSecondary,
+    flex: 1,
+  },
+  chartFallback: {
+    height: 220,
+    paddingVertical: SPACING.md,
+  },
+  chartFallbackContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-around',
+    height: 160,
+    marginBottom: SPACING.md,
+  },
+  chartBarContainer: {
+    flex: 1,
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  chartBarGroup: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 2,
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+  },
+  chartBar: {
+    width: '48%',
+    minHeight: 4,
+    borderRadius: RADIUS.sm,
+  },
+  chartBarIncome: {
+    backgroundColor: COLORS.success,
+  },
+  chartBarExpense: {
+    backgroundColor: COLORS.error,
+  },
+  chartBarLabel: {
+    ...TYPOGRAPHY.small,
+    color: COLORS.textTertiary,
+    fontSize: 10,
+  },
+  chartLegend: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: SPACING.lg,
+    marginTop: SPACING.sm,
+  },
+  chartLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  chartLegendColor: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  chartLegendText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+  },
+  categoryBreakdown: {
+    gap: SPACING.md,
+    paddingVertical: SPACING.sm,
+  },
+  categoryBreakdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    paddingVertical: SPACING.sm,
+  },
+  categoryBreakdownColor: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+  },
+  categoryBreakdownInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  categoryBreakdownName: {
+    ...TYPOGRAPHY.body,
     color: COLORS.text,
     flex: 1,
-    lineHeight: 22,
+  },
+  categoryBreakdownAmount: {
+    ...TYPOGRAPHY.bodyBold,
+    color: COLORS.text,
   },
 });
 

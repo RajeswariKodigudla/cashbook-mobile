@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Cashbook",
-    "slug": "cashbook",
+    "name": "Byjan Cashbook",
+    "slug": "byjan-cashbook",
     "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

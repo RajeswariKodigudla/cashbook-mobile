@@ -1,207 +1,111 @@
 /**
- * Budget Management Screen
- * Set and track budgets for categories
+ * Budget Screen with Real Data
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
-  Alert,
-  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaViewWrapper } from '../components/SafeAreaWrapper';
 import { Card } from '../components/Card';
-import { Button } from '../components/Button';
-import { Input } from '../components/Input';
 import { Ionicons } from '@expo/vector-icons';
-import { transactionService } from '../services/apiService';
+import { getTransactions } from '../utils/apiTransactions';
 import { Transaction } from '../types';
-import { COLORS, CATEGORIES, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants';
+import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants';
 import { formatCurrency } from '../utils/formatUtils';
-import { getCategoryIcon } from '../utils/iconUtils';
+import { isInDateRange } from '../utils/dateUtils';
+import { CATEGORIES } from '../constants';
 
-interface Budget {
-  categoryId: string;
-  amount: number;
-  period: 'MONTHLY' | 'WEEKLY';
-}
+const MONTHLY_BUDGET = 20000; // Default monthly budget
 
 const BudgetScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const [budgets, setBudgets] = useState<Budget[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string>('');
-  const [budgetAmount, setBudgetAmount] = useState('');
-  const [budgetPeriod, setBudgetPeriod] = useState<'MONTHLY' | 'WEEKLY'>('MONTHLY');
+  const [loading, setLoading] = useState(true);
+  const [budget, setBudget] = useState(MONTHLY_BUDGET);
 
   useEffect(() => {
-    loadData();
+    loadTransactions();
   }, []);
 
-  const loadData = async () => {
+  const loadTransactions = async () => {
     try {
-      const data = await transactionService.getTransactions();
-      setTransactions(data || []);
-      // Load budgets from storage (you'll need to implement this)
-      // For now, using mock data
+      setLoading(true);
+      const data = await getTransactions();
+      const transactionsArray = Array.isArray(data) ? data : [];
+      setTransactions(transactionsArray as Transaction[]);
     } catch (error) {
-      console.error('Error loading data:', error);
+      console.error('Error loading transactions:', error);
+      setTransactions([]);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const getCategorySpending = (categoryId: string, period: 'MONTHLY' | 'WEEKLY') => {
-    const now = new Date();
-    let startDate: Date;
+  // Filter expenses for current month
+  const monthlyExpenses = useMemo(() => {
+    const currentMonthTransactions = transactions.filter(tx => {
+      const timestamp = tx.timestamp || (tx.date ? new Date(tx.date).getTime() : Date.now());
+      return isInDateRange(timestamp, 'MONTH');
+    });
 
-    if (period === 'MONTHLY') {
-      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-    } else {
-      startDate = new Date(now);
-      startDate.setDate(now.getDate() - now.getDay());
-    }
+    return currentMonthTransactions
+      .filter(tx => {
+        const type = String(tx.type || tx.transaction_type || '').toLowerCase().trim();
+        return type === 'expense' || type === 'ex' || type === 'out' || type === 'debit' || type === 'exp' || type === 'e' ||
+               (tx.amount && (tx.amount < 0 || tx.is_expense));
+      })
+      .reduce((sum, tx) => sum + Math.abs(tx.amount || 0), 0);
+  }, [transactions]);
 
-    return transactions
-      .filter(
-        tx =>
-          tx.categoryId === categoryId &&
-          tx.type === 'EXPENSE' &&
-          tx.timestamp >= startDate.getTime()
-      )
-      .reduce((sum, tx) => sum + (tx.amount || 0), 0);
-  };
+  // Calculate category-wise spending
+  const categorySpending = useMemo(() => {
+    const currentMonthTransactions = transactions.filter(tx => {
+      const timestamp = tx.timestamp || (tx.date ? new Date(tx.date).getTime() : Date.now());
+      return isInDateRange(timestamp, 'MONTH');
+    });
 
-  const handleAddBudget = () => {
-    if (!selectedCategory || !budgetAmount) {
-      Alert.alert('Error', 'Please fill all fields');
-      return;
-    }
+    const categoryMap = new Map<string, number>();
+    
+    currentMonthTransactions
+      .filter(tx => {
+        const type = String(tx.type || tx.transaction_type || '').toLowerCase().trim();
+        return type === 'expense' || type === 'ex' || type === 'out' || type === 'debit' || type === 'exp' || type === 'e' ||
+               (tx.amount && (tx.amount < 0 || tx.is_expense));
+      })
+      .forEach(tx => {
+        const categoryId = tx.categoryId || tx.category_id || 'other_exp';
+        const category = CATEGORIES.find(c => c.id === categoryId);
+        const categoryName = category?.label || 'Other';
+        const current = categoryMap.get(categoryName) || 0;
+        categoryMap.set(categoryName, current + Math.abs(tx.amount || 0));
+      });
 
-    const amount = parseFloat(budgetAmount);
-    if (isNaN(amount) || amount <= 0) {
-      Alert.alert('Error', 'Please enter a valid amount');
-      return;
-    }
+    return Array.from(categoryMap.entries())
+      .map(([name, amount]) => ({ name, amount }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 5);
+  }, [transactions]);
 
-    const newBudget: Budget = {
-      categoryId: selectedCategory,
-      amount,
-      period: budgetPeriod,
-    };
+  const spent = monthlyExpenses;
+  const remaining = budget - spent;
+  const percentUsed = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0;
+  const isOverBudget = spent > budget;
 
-    setBudgets([...budgets.filter(b => b.categoryId !== selectedCategory), newBudget]);
-    setShowAddModal(false);
-    setSelectedCategory('');
-    setBudgetAmount('');
-  };
-
-  const handleDeleteBudget = (categoryId: string) => {
-    Alert.alert('Delete Budget', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          setBudgets(budgets.filter(b => b.categoryId !== categoryId));
-        },
-      },
-    ]);
-  };
-
-  const renderBudgetCard = (budget: Budget) => {
-    const category = CATEGORIES.find(c => c.id === budget.categoryId);
-    const spent = getCategorySpending(budget.categoryId, budget.period);
-    const remaining = budget.amount - spent;
-    const percentage = (spent / budget.amount) * 100;
-    const isOverBudget = spent > budget.amount;
-
+  if (loading) {
     return (
-      <Card key={budget.categoryId} style={styles.budgetCard}>
-        <View style={styles.budgetHeader}>
-          <View style={styles.budgetCategoryInfo}>
-            <View style={styles.budgetIconContainer}>
-              <Ionicons
-                name={getCategoryIcon(category?.icon || 'ellipse') as any}
-                size={24}
-                color={COLORS.primary}
-              />
-            </View>
-            <View style={styles.budgetCategoryText}>
-              <Text style={styles.budgetCategoryName}>{category?.label || 'Unknown'}</Text>
-              <Text style={styles.budgetPeriod}>
-                {budget.period === 'MONTHLY' ? 'Monthly' : 'Weekly'}
-              </Text>
-            </View>
-          </View>
-          <TouchableOpacity
-            onPress={() => handleDeleteBudget(budget.categoryId)}
-            style={styles.deleteButton}
-          >
-            <Ionicons name="trash-outline" size={20} color={COLORS.error} />
-          </TouchableOpacity>
+      <SafeAreaViewWrapper style={styles.container} edges={['top']}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading budget data...</Text>
         </View>
-
-        <View style={styles.budgetAmounts}>
-          <View style={styles.budgetAmountRow}>
-            <Text style={styles.budgetAmountLabel}>Budget</Text>
-            <Text style={styles.budgetAmountValue}>{formatCurrency(budget.amount)}</Text>
-          </View>
-          <View style={styles.budgetAmountRow}>
-            <Text style={styles.budgetAmountLabel}>Spent</Text>
-            <Text
-              style={[
-                styles.budgetAmountValue,
-                { color: isOverBudget ? COLORS.error : COLORS.text },
-              ]}
-            >
-              {formatCurrency(spent)}
-            </Text>
-          </View>
-          <View style={styles.budgetAmountRow}>
-            <Text style={styles.budgetAmountLabel}>Remaining</Text>
-            <Text
-              style={[
-                styles.budgetAmountValue,
-                { color: remaining >= 0 ? COLORS.success : COLORS.error },
-              ]}
-            >
-              {formatCurrency(remaining)}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.budgetProgress}>
-          <View style={styles.budgetProgressBar}>
-            <View
-              style={[
-                styles.budgetProgressFill,
-                {
-                  width: `${Math.min(percentage, 100)}%`,
-                  backgroundColor: isOverBudget ? COLORS.error : COLORS.primary,
-                },
-              ]}
-            />
-          </View>
-          <Text style={styles.budgetProgressText}>
-            {percentage.toFixed(1)}% used
-          </Text>
-        </View>
-
-        {isOverBudget && (
-          <View style={styles.overBudgetWarning}>
-            <Ionicons name="warning" size={16} color={COLORS.error} />
-            <Text style={styles.overBudgetText}>
-              Over budget by {formatCurrency(Math.abs(remaining))}
-            </Text>
-          </View>
-        )}
-      </Card>
+      </SafeAreaViewWrapper>
     );
-  };
+  }
 
   return (
     <SafeAreaViewWrapper style={styles.container} edges={['top']}>
@@ -218,157 +122,118 @@ const BudgetScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           >
             <Ionicons name="arrow-back" size={24} color={COLORS.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Budget Management</Text>
-          <TouchableOpacity
-            onPress={() => setShowAddModal(true)}
-            style={styles.addButton}
-          >
-            <Ionicons name="add" size={24} color={COLORS.primary} />
-          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Monthly Budget</Text>
+          <View style={styles.placeholder} />
         </View>
 
-        {/* Info Card */}
-        <Card style={styles.infoCard}>
-          <View style={styles.infoContent}>
-            <Ionicons name="information-circle" size={24} color={COLORS.primary} />
-            <View style={styles.infoText}>
-              <Text style={styles.infoTitle}>Track Your Spending</Text>
-              <Text style={styles.infoDescription}>
-                Set budgets for categories and track your spending to stay within limits.
+        {/* Budget Overview Card */}
+        <Card style={styles.budgetCard}>
+          <View style={styles.budgetHeader}>
+            <View style={styles.budgetIconContainer}>
+              <Ionicons name="wallet" size={32} color={COLORS.primary} />
+            </View>
+            <View style={styles.budgetInfo}>
+              <Text style={styles.budgetLabel}>Monthly Budget</Text>
+              <Text style={styles.budgetAmount}>{formatCurrency(budget)}</Text>
+            </View>
+          </View>
+
+          <View style={styles.progressContainer}>
+            <View style={styles.progressHeader}>
+              <Text style={styles.progressLabel}>Spent</Text>
+              <Text style={[styles.progressValue, isOverBudget && styles.overBudget]}>
+                {formatCurrency(spent)}
+              </Text>
+            </View>
+            <View style={styles.progressBar}>
+              <View
+                style={[
+                  styles.progressFill,
+                  {
+                    width: `${Math.min(percentUsed, 100)}%`,
+                    backgroundColor: isOverBudget ? COLORS.error : COLORS.warning,
+                  },
+                ]}
+              />
+            </View>
+            <View style={styles.progressFooter}>
+              <Text style={styles.progressPercent}>{percentUsed.toFixed(0)}% used</Text>
+              <Text style={[styles.progressRemaining, isOverBudget && styles.overBudget]}>
+                {isOverBudget
+                  ? `${formatCurrency(Math.abs(remaining))} over budget`
+                  : `${formatCurrency(remaining)} remaining`}
               </Text>
             </View>
           </View>
         </Card>
 
-        {/* Budgets List */}
-        {budgets.length === 0 ? (
-          <Card style={styles.emptyCard}>
-            <Ionicons name="wallet-outline" size={64} color={COLORS.textTertiary} />
-            <Text style={styles.emptyTitle}>No Budgets Set</Text>
-            <Text style={styles.emptyText}>
-              Create a budget to start tracking your spending
-            </Text>
-            <Button
-              title="Add Budget"
-              onPress={() => setShowAddModal(true)}
-              style={styles.emptyButton}
-            />
+        {/* Top Spending Categories */}
+        {categorySpending.length > 0 && (
+          <Card style={styles.categoriesCard}>
+            <View style={styles.categoriesHeader}>
+              <Ionicons name="list" size={24} color={COLORS.primary} />
+              <Text style={styles.categoriesTitle}>Top Spending Categories</Text>
+            </View>
+            <View style={styles.categoriesList}>
+              {categorySpending.map((item, index) => {
+                const categoryPercent = budget > 0 ? (item.amount / budget) * 100 : 0;
+                return (
+                  <View key={index} style={styles.categoryItem}>
+                    <View style={styles.categoryHeader}>
+                      <Text style={styles.categoryName}>{item.name}</Text>
+                      <Text style={styles.categoryAmount}>{formatCurrency(item.amount)}</Text>
+                    </View>
+                    <View style={styles.categoryProgressBar}>
+                      <View
+                        style={[
+                          styles.categoryProgressFill,
+                          { width: `${Math.min(categoryPercent, 100)}%` },
+                        ]}
+                      />
+                    </View>
+                    <Text style={styles.categoryPercent}>{categoryPercent.toFixed(1)}% of budget</Text>
+                  </View>
+                );
+              })}
+            </View>
           </Card>
-        ) : (
-          budgets.map(renderBudgetCard)
         )}
-      </ScrollView>
 
-      {/* Add Budget Modal */}
-      <Modal
-        visible={showAddModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowAddModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <Card style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Budget</Text>
-              <TouchableOpacity
-                onPress={() => setShowAddModal(false)}
-                style={styles.modalCloseButton}
-              >
-                <Ionicons name="close" size={24} color={COLORS.text} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.modalBody}>
-              <Text style={styles.modalLabel}>Category</Text>
-              <ScrollView style={styles.categorySelector}>
-                {CATEGORIES.filter(c => c.type === 'EXPENSE').map(category => (
-                  <TouchableOpacity
-                    key={category.id}
-                    style={[
-                      styles.categoryOption,
-                      selectedCategory === category.id && styles.categoryOptionActive,
-                    ]}
-                    onPress={() => setSelectedCategory(category.id)}
-                  >
-                    <Ionicons
-                      name={getCategoryIcon(category.icon) as any}
-                      size={20}
-                      color={selectedCategory === category.id ? COLORS.primary : COLORS.textSecondary}
-                    />
-                    <Text
-                      style={[
-                        styles.categoryOptionText,
-                        selectedCategory === category.id && styles.categoryOptionTextActive,
-                      ]}
-                    >
-                      {category.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              <Text style={styles.modalLabel}>Amount</Text>
-              <Input
-                placeholder="Enter budget amount"
-                value={budgetAmount}
-                onChangeText={setBudgetAmount}
-                keyboardType="numeric"
-                style={styles.modalInput}
-              />
-
-              <Text style={styles.modalLabel}>Period</Text>
-              <View style={styles.periodSelector}>
-                <TouchableOpacity
-                  style={[
-                    styles.periodButton,
-                    budgetPeriod === 'MONTHLY' && styles.periodButtonActive,
-                  ]}
-                  onPress={() => setBudgetPeriod('MONTHLY')}
-                >
-                  <Text
-                    style={[
-                      styles.periodButtonText,
-                      budgetPeriod === 'MONTHLY' && styles.periodButtonTextActive,
-                    ]}
-                  >
-                    Monthly
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.periodButton,
-                    budgetPeriod === 'WEEKLY' && styles.periodButtonActive,
-                  ]}
-                  onPress={() => setBudgetPeriod('WEEKLY')}
-                >
-                  <Text
-                    style={[
-                      styles.periodButtonText,
-                      budgetPeriod === 'WEEKLY' && styles.periodButtonTextActive,
-                    ]}
-                  >
-                    Weekly
-                  </Text>
-                </TouchableOpacity>
+        {/* Budget Tips */}
+        <Card style={styles.tipsCard}>
+          <View style={styles.tipsHeader}>
+            <Ionicons name="bulb-outline" size={24} color={COLORS.warning} />
+            <Text style={styles.tipsTitle}>Budget Tips</Text>
+          </View>
+          <View style={styles.tipsList}>
+            {isOverBudget ? (
+              <View style={styles.tipItem}>
+                <Ionicons name="warning" size={20} color={COLORS.error} />
+                <Text style={styles.tipText}>
+                  You've exceeded your monthly budget. Consider reviewing your expenses.
+                </Text>
               </View>
-            </View>
-
-            <View style={styles.modalFooter}>
-              <Button
-                title="Cancel"
-                onPress={() => setShowAddModal(false)}
-                variant="outline"
-                style={styles.modalCancelButton}
-              />
-              <Button
-                title="Add Budget"
-                onPress={handleAddBudget}
-                style={styles.modalAddButton}
-              />
-            </View>
-          </Card>
-        </View>
-      </Modal>
+            ) : (
+              <>
+                <View style={styles.tipItem}>
+                  <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
+                  <Text style={styles.tipText}>
+                    You're on track! {percentUsed < 50 ? 'Great job managing your budget.' : 'Keep monitoring your spending.'}
+                  </Text>
+                </View>
+                {percentUsed > 75 && (
+                  <View style={styles.tipItem}>
+                    <Ionicons name="alert-circle" size={20} color={COLORS.warning} />
+                    <Text style={styles.tipText}>
+                      You've used {percentUsed.toFixed(0)}% of your budget. Be mindful of remaining expenses.
+                    </Text>
+                  </View>
+                )}
+              </>
+            )}
+          </View>
+        </Card>
+      </ScrollView>
     </SafeAreaViewWrapper>
   );
 };
@@ -383,6 +248,16 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: SPACING.xl,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: SPACING.md,
+  },
+  loadingText: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.textSecondary,
   },
   header: {
     flexDirection: 'row',
@@ -399,233 +274,161 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.h2,
     color: COLORS.text,
   },
-  addButton: {
-    padding: SPACING.xs,
-  },
-  infoCard: {
-    marginHorizontal: SPACING.md,
-    marginBottom: SPACING.md,
-    padding: SPACING.md,
-    backgroundColor: COLORS.primaryLight + '10',
-  },
-  infoContent: {
-    flexDirection: 'row',
-    gap: SPACING.md,
-  },
-  infoText: {
-    flex: 1,
-    gap: 4,
-  },
-  infoTitle: {
-    ...TYPOGRAPHY.bodyBold,
-    color: COLORS.text,
-  },
-  infoDescription: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textSecondary,
-    lineHeight: 18,
-  },
-  emptyCard: {
-    marginHorizontal: SPACING.md,
-    padding: SPACING.xl,
-    alignItems: 'center',
-    gap: SPACING.md,
-  },
-  emptyTitle: {
-    ...TYPOGRAPHY.h3,
-    color: COLORS.text,
-  },
-  emptyText: {
-    ...TYPOGRAPHY.body,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-  },
-  emptyButton: {
-    marginTop: SPACING.sm,
+  placeholder: {
+    width: 40,
   },
   budgetCard: {
     marginHorizontal: SPACING.md,
-    marginBottom: SPACING.md,
+    marginTop: SPACING.md,
     padding: SPACING.lg,
   },
   budgetHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: SPACING.md,
-  },
-  budgetCategoryInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    marginBottom: SPACING.lg,
     gap: SPACING.md,
-    flex: 1,
   },
   budgetIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: COLORS.primaryLight + '15',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: COLORS.primaryLight + '20',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  budgetCategoryText: {
+  budgetInfo: {
     flex: 1,
   },
-  budgetCategoryName: {
-    ...TYPOGRAPHY.bodyBold,
-    color: COLORS.text,
-  },
-  budgetPeriod: {
+  budgetLabel: {
     ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
-    marginTop: 2,
+    marginBottom: SPACING.xs,
   },
-  deleteButton: {
-    padding: SPACING.xs,
+  budgetAmount: {
+    ...TYPOGRAPHY.h1,
+    fontWeight: '700',
+    color: COLORS.text,
   },
-  budgetAmounts: {
-    gap: SPACING.sm,
-    marginBottom: SPACING.md,
+  progressContainer: {
+    gap: SPACING.md,
   },
-  budgetAmountRow: {
+  progressHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  budgetAmountLabel: {
-    ...TYPOGRAPHY.body,
-    color: COLORS.textSecondary,
-  },
-  budgetAmountValue: {
+  progressLabel: {
     ...TYPOGRAPHY.bodyBold,
     color: COLORS.text,
   },
-  budgetProgress: {
-    gap: SPACING.xs,
+  progressValue: {
+    ...TYPOGRAPHY.h3,
+    fontWeight: '700',
+    color: COLORS.text,
   },
-  budgetProgressBar: {
-    height: 8,
-    backgroundColor: COLORS.border,
+  overBudget: {
+    color: COLORS.error,
+  },
+  progressBar: {
+    height: 16,
+    backgroundColor: COLORS.borderLight,
     borderRadius: RADIUS.full,
     overflow: 'hidden',
   },
-  budgetProgressFill: {
+  progressFill: {
     height: '100%',
     borderRadius: RADIUS.full,
   },
-  budgetProgressText: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textSecondary,
-    textAlign: 'right',
-  },
-  overBudgetWarning: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-    marginTop: SPACING.sm,
-    padding: SPACING.sm,
-    backgroundColor: COLORS.errorLight,
-    borderRadius: RADIUS.md,
-  },
-  overBudgetText: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.error,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: COLORS.overlay,
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: COLORS.surface,
-    borderTopLeftRadius: RADIUS.xl,
-    borderTopRightRadius: RADIUS.xl,
-    padding: SPACING.lg,
-    maxHeight: '90%',
-  },
-  modalHeader: {
+  progressFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: SPACING.lg,
   },
-  modalTitle: {
-    ...TYPOGRAPHY.h2,
-    color: COLORS.text,
+  progressPercent: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
   },
-  modalCloseButton: {
-    padding: SPACING.xs,
-  },
-  modalBody: {
-    gap: SPACING.md,
-  },
-  modalLabel: {
+  progressRemaining: {
     ...TYPOGRAPHY.bodyBold,
-    color: COLORS.text,
-    marginBottom: SPACING.xs,
+    color: COLORS.success,
   },
-  categorySelector: {
-    maxHeight: 200,
-    backgroundColor: COLORS.background,
-    borderRadius: RADIUS.md,
-    padding: SPACING.xs,
+  categoriesCard: {
+    marginHorizontal: SPACING.md,
+    marginTop: SPACING.md,
+    padding: SPACING.lg,
   },
-  categoryOption: {
+  categoriesHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.sm,
-    padding: SPACING.md,
-    borderRadius: RADIUS.md,
-    marginBottom: SPACING.xs,
+    marginBottom: SPACING.lg,
   },
-  categoryOptionActive: {
-    backgroundColor: COLORS.primaryLight + '15',
+  categoriesTitle: {
+    ...TYPOGRAPHY.h3,
+    color: COLORS.text,
   },
-  categoryOptionText: {
-    ...TYPOGRAPHY.body,
-    color: COLORS.textSecondary,
-  },
-  categoryOptionTextActive: {
-    color: COLORS.primary,
-    fontWeight: '600',
-  },
-  modalInput: {
-    marginBottom: SPACING.xs,
-  },
-  periodSelector: {
-    flexDirection: 'row',
+  categoriesList: {
     gap: SPACING.md,
   },
-  periodButton: {
-    flex: 1,
-    padding: SPACING.md,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.background,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+  categoryItem: {
+    gap: SPACING.xs,
+  },
+  categoryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
-  periodButtonActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  periodButtonText: {
+  categoryName: {
     ...TYPOGRAPHY.bodyBold,
-    color: COLORS.textSecondary,
+    color: COLORS.text,
   },
-  periodButtonTextActive: {
-    color: COLORS.textInverse,
+  categoryAmount: {
+    ...TYPOGRAPHY.bodyBold,
+    color: COLORS.text,
   },
-  modalFooter: {
+  categoryProgressBar: {
+    height: 8,
+    backgroundColor: COLORS.borderLight,
+    borderRadius: RADIUS.sm,
+    overflow: 'hidden',
+  },
+  categoryProgressFill: {
+    height: '100%',
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.sm,
+  },
+  categoryPercent: {
+    ...TYPOGRAPHY.small,
+    color: COLORS.textTertiary,
+  },
+  tipsCard: {
+    marginHorizontal: SPACING.md,
+    marginTop: SPACING.md,
+    padding: SPACING.lg,
+  },
+  tipsHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.lg,
+  },
+  tipsTitle: {
+    ...TYPOGRAPHY.h3,
+    color: COLORS.text,
+  },
+  tipsList: {
     gap: SPACING.md,
-    marginTop: SPACING.lg,
   },
-  modalCancelButton: {
-    flex: 1,
+  tipItem: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    alignItems: 'flex-start',
   },
-  modalAddButton: {
+  tipText: {
     flex: 1,
+    ...TYPOGRAPHY.body,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
   },
 });
 

@@ -3,16 +3,62 @@
  */
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
 
-// Lazy load SecureStore to avoid runtime errors
-const getSecureStore = (): any => {
+// Web-compatible storage interface
+interface StorageInterface {
+  getItemAsync: (key: string) => Promise<string | null>;
+  setItemAsync: (key: string, value: string) => Promise<void>;
+  deleteItemAsync: (key: string) => Promise<void>;
+}
+
+// Get storage adapter (SecureStore for native, localStorage for web)
+const getStorage = (): StorageInterface | null => {
+  // Use localStorage on web
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      return {
+        getItemAsync: async (key: string): Promise<string | null> => {
+          try {
+            return window.localStorage.getItem(key);
+          } catch (e) {
+            console.warn('localStorage.getItem failed:', e);
+            return null;
+          }
+        },
+        setItemAsync: async (key: string, value: string): Promise<void> => {
+          try {
+            window.localStorage.setItem(key, value);
+          } catch (e) {
+            console.warn('localStorage.setItem failed:', e);
+          }
+        },
+        deleteItemAsync: async (key: string): Promise<void> => {
+          try {
+            window.localStorage.removeItem(key);
+          } catch (e) {
+            console.warn('localStorage.removeItem failed:', e);
+          }
+        },
+      };
+    }
+    return null;
+  }
+
+  // Use SecureStore on native platforms
   try {
     const store = require('expo-secure-store');
+    // Check if the store has the required methods
     if (store && typeof store.getItemAsync === 'function' && typeof store.setItemAsync === 'function') {
       return store;
     }
+    // Handle case where store might be wrapped in .default
+    if (store?.default && typeof store.default.getItemAsync === 'function') {
+      return store.default;
+    }
   } catch (e) {
     // SecureStore not available
+    console.warn('SecureStore not available:', e);
   }
   return null;
 };
@@ -29,19 +75,19 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
-  const secureStoreRef = useRef<any>(null);
+  const storageRef = useRef<StorageInterface | null>(null);
 
   useEffect(() => {
-    // Load SecureStore after component mounts (runtime is ready)
-    secureStoreRef.current = getSecureStore();
+    // Load storage adapter after component mounts (runtime is ready)
+    storageRef.current = getStorage();
     loadAuth();
   }, []);
 
   const loadAuth = async () => {
-    const SecureStore = secureStoreRef.current;
-    if (!SecureStore) return;
+    const storage = storageRef.current;
+    if (!storage) return;
     try {
-      const stored = await SecureStore.getItemAsync('auth');
+      const stored = await storage.getItemAsync('auth');
       if (stored) {
         const auth = JSON.parse(stored);
         setIsAuthenticated(true);
@@ -49,27 +95,28 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     } catch (error) {
       console.error('Error loading auth:', error);
+      // Don't block app if auth loading fails
     }
   };
 
   const setAuth = async (user: string | null) => {
-    const SecureStore = secureStoreRef.current;
+    const storage = storageRef.current;
     if (user) {
-      if (SecureStore) {
+      if (storage) {
         try {
-          await SecureStore.setItemAsync('auth', JSON.stringify({ username: user }));
+          await storage.setItemAsync('auth', JSON.stringify({ username: user }));
         } catch (e) {
-          console.warn('Failed to save auth to SecureStore (non-critical):', e);
+          console.warn('Failed to save auth to storage (non-critical):', e);
         }
       }
       setIsAuthenticated(true);
       setUsername(user);
     } else {
-      if (SecureStore) {
+      if (storage) {
         try {
-          await SecureStore.deleteItemAsync('auth');
+          await storage.deleteItemAsync('auth');
         } catch (e) {
-          console.warn('Failed to delete auth from SecureStore (non-critical):', e);
+          console.warn('Failed to delete auth from storage (non-critical):', e);
         }
       }
       setIsAuthenticated(false);

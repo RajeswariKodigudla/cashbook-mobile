@@ -8,6 +8,7 @@ import {
   TextInput,
   Modal,
   Alert,
+  Platform,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -111,9 +112,9 @@ export default function AppLockScreen({ navigation }) {
 
       {/* PASSWORD */}
       <TouchableOpacity
-        style={[styles.lockCard, !lock.enabled && styles.disabled]}
-        onPress={lock.enabled ? () => setShowPasswordModal(true) : null}
-        disabled={!lock.enabled}
+        style={[styles.lockCard, !lock.enabled && styles.disabled, !lock.enabled && { pointerEvents: 'none' }]}
+        onPress={lock.enabled ? () => setShowPasswordModal(true) : undefined}
+        {...(Platform.OS === 'web' ? {} : { disabled: !lock.enabled })}
       >
         <Text style={styles.icon}>🔒</Text>
         <View style={styles.lockContent}>
@@ -125,9 +126,9 @@ export default function AppLockScreen({ navigation }) {
 
       {/* SECURITY QUESTION */}
       <TouchableOpacity
-        style={[styles.lockCard, !lock.enabled && styles.disabled]}
-        onPress={lock.enabled ? () => setShowQuestionModal(true) : null}
-        disabled={!lock.enabled}
+        style={[styles.lockCard, !lock.enabled && styles.disabled, !lock.enabled && { pointerEvents: 'none' }]}
+        onPress={lock.enabled ? () => setShowQuestionModal(true) : undefined}
+        {...(Platform.OS === 'web' ? {} : { disabled: !lock.enabled })}
       >
         <Text style={styles.icon}>❓</Text>
         <View style={styles.lockContent}>
