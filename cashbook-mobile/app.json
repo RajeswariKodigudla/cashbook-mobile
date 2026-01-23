@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "Byjan Cashbook",
+    "slug": "cashbook",
+    "version": "1.0.7",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#3B82F6"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.rajeswari.cashbook",
+      "buildNumber": "3"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#3B82F6"
+      },
+      "package": "com.rajeswari.cashbook",
+      "versionCode": 7,
+      "permissions": []
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "apiUrl": "https://cashbook-backend-2.onrender.com/api",
+      "eas": {
+        "projectId": "860db25c-e05e-4adf-b73a-aac1ea5cbf56"
+      }
+    },
+    "owner": "byjanbookss-organization"
+  }
+}

@@ -1,0 +1,107 @@
+/**
+ * Professional Input Component - Responsive for Mobile & Web
+ */
+
+import React from 'react';
+import { View, TextInput, Text, StyleSheet, TextInputProps, Platform } from 'react-native';
+import { COLORS, TYPOGRAPHY, RADIUS, SPACING } from '../constants';
+import { isWeb } from '../utils/responsive';
+
+interface InputProps extends TextInputProps {
+  label?: string;
+  error?: string;
+  helperText?: string;
+  rightIcon?: React.ReactNode;
+}
+
+export const Input: React.FC<InputProps> = ({
+  label,
+  error,
+  helperText,
+  rightIcon,
+  style,
+  ...props
+}) => {
+  // Ensure we always return boolean values, not strings or other falsy values
+  const hasError = Boolean(error && typeof error === 'string' && error.trim().length > 0);
+  const hasHelperText = Boolean(helperText && typeof helperText === 'string' && helperText.trim().length > 0);
+  const hasLabel = Boolean(label && typeof label === 'string' && label.trim().length > 0);
+
+  return (
+    <View style={styles.container}>
+      {hasLabel ? <Text style={styles.label}>{label}</Text> : null}
+      <View style={styles.inputWrapper}>
+        <TextInput
+          style={[
+            styles.input,
+            hasError && styles.inputError,
+            isWeb && styles.webInput,
+            rightIcon && styles.inputWithIcon,
+            style,
+          ]}
+          placeholderTextColor={COLORS.textTertiary}
+          {...props}
+        />
+        {rightIcon ? <View style={styles.rightIconContainer}>{rightIcon}</View> : null}
+      </View>
+      {hasError ? <Text style={styles.errorText}>{error}</Text> : null}
+      {hasHelperText && !hasError ? <Text style={styles.helperText}>{helperText}</Text> : null}
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    marginBottom: SPACING.md,
+  },
+  label: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.text,
+    marginBottom: SPACING.sm,
+  },
+  inputWrapper: {
+    position: 'relative',
+  },
+  input: {
+    ...TYPOGRAPHY.body,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    color: COLORS.text,
+    minHeight: 44,
+  },
+  inputWithIcon: {
+    paddingRight: 48,
+  },
+  rightIconContainer: {
+    position: 'absolute',
+    right: SPACING.md,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  inputError: {
+    borderColor: COLORS.error,
+  },
+  errorText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.error,
+    marginTop: SPACING.xs,
+  },
+  helperText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    marginTop: SPACING.xs,
+  },
+  webInput: {
+    ...(Platform.OS === 'web' && {
+      outlineStyle: 'none',
+      transition: 'border-color 0.2s ease',
+    }),
+  },
+});
+
